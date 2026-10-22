@@ -133,7 +133,7 @@ def _observer(mode: str, tier: str):
 
     # No CachedObserver here: the app must not persist observations about a class (cache is eval-only).
     model = model_id(tier)
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
     return GeminiObserver(client, model=model), model
 
 

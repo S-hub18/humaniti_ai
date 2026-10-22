@@ -12,6 +12,8 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import Iterator
 
+import logging
+
 from google.genai import types
 from pydantic import ValidationError
 
@@ -23,6 +25,8 @@ from cqa.prompts import build_prompt
 from cqa.rubric import CALL_ITEMS, Status
 from cqa.schema import ItemObservation, ObserverOutput, gemini_response_schema
 
+
+log = logging.getLogger(__name__)
 
 RESOLUTION = {
     "low": types.MediaResolution.MEDIA_RESOLUTION_LOW,
@@ -156,7 +160,9 @@ class GeminiObserver:
                 delay = self._retry_delay(exc)
                 if delay is None or attempt == self.max_retries:
                     raise
-                self._sleep(min(delay + 2.0, 120.0) * (1 + attempt * 0.5))
+                wait = min(delay + 2.0, 120.0) * (1 + attempt * 0.5)
+                log.warning("Gemini rate limited (429); retry %d/%d in %.0f s", attempt + 1, self.max_retries, wait)
+                self._sleep(wait)
         raise RuntimeError("unreachable")
 
     def _stats(self, resp, latency: float) -> CallStats:

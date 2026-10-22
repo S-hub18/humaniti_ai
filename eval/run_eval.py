@@ -261,7 +261,7 @@ def _gemini_factory() -> Callable[[dict], Observer]:
     from cqa.gemini_observer import GeminiObserver
     from cqa.prompts import PROMPT_VERSION
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
     prices = yaml.safe_load((REPO / "cqa" / "pricing.yaml").read_text()) if (REPO / "cqa" / "pricing.yaml").exists() else None
     observer = CachedObserver(GeminiObserver(client, prices=prices), REPO / ".scratch" / "cache",
                               model=os.environ["CQA_GEMINI_MODEL"], prompt_version=PROMPT_VERSION)

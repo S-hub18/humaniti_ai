@@ -143,7 +143,7 @@ def test_gemini_mode_uses_no_disk_cache(monkeypatch):
     import types as _t
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
-    fake = _t.SimpleNamespace(Client=lambda api_key: object())
+    fake = _t.SimpleNamespace(Client=lambda api_key, **kw: object())
     monkeypatch.setitem(sys.modules, "google.genai", fake)
     monkeypatch.setattr(sys.modules["google"], "genai", fake, raising=False)
     obs, model = service._observer("gemini", "flash")

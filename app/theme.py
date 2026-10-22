@@ -39,7 +39,8 @@ html, body, [class*="css"], .stMarkdown, p, li, label{
 .cq-section{ font-size:1.25rem; font-weight:800; color:var(--ink); margin:1.8rem 0 .5rem 0; }
 .cq-hero{ position:relative; overflow:hidden; display:grid; grid-template-columns:auto 1fr; align-items:center; gap:1rem 2rem; padding:1.2rem 1.4rem; margin:.4rem 0 .6rem 0;
   background:var(--surface); border:1px solid var(--line); border-left:10px solid var(--g); border-radius:6px; }
-.cq-hero::after{ content:""; position:absolute; left:10px; bottom:0; width:72px; height:48px; opacity:.18; pointer-events:none;
+.cq-hero > *{ position:relative; z-index:1; }
+.cq-hero::after{ content:""; position:absolute; z-index:0; left:10px; bottom:0; width:72px; height:48px; opacity:.18; pointer-events:none;
   background:repeating-conic-gradient(var(--board-dark) 0 25%%, transparent 0 50%%) 0 0/24px 24px; }
 .cq-grade{ font-size:3.6rem; font-weight:900; line-height:1; color:var(--g); }
 .cq-piece{ font-size:3.4rem; line-height:1; color:var(--g); }

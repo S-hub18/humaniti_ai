@@ -322,7 +322,7 @@ def main() -> None:
     st.set_page_config(page_title="Class review", page_icon="\u265e", layout="wide")
     st.markdown(theme_css(), unsafe_allow_html=True)
     review = st.Page(review_page, title="Review a class", icon=":material/rate_review:", default=True)
-    how = st.Page(str(Path(__file__).resolve().parent / "pages" / "how_it_works.py"), title="How it works",
+    how = st.Page(str(Path(__file__).resolve().parent / "views" / "how_it_works.py"), title="How it works",
                   icon=":material/info:", url_path="how_it_works")
     st.session_state["_pages"] = {"review": review, "how": how}
     nav = st.navigation([review, how], position="sidebar")

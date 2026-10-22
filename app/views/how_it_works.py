@@ -16,14 +16,14 @@ P = TOKENS["light"]
 
 DIAGRAM = f"""
 digraph G {{
-  rankdir=LR; bgcolor="transparent"; pad=0.2; nodesep=0.35; ranksep=0.45;
-  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="{P['line']}",
+  rankdir=LR; bgcolor="transparent"; pad=0.2; nodesep=0.3; ranksep=0.35;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=15, color="{P['line']}",
         fillcolor="{P['surface']}", fontcolor="{P['ink']}", penwidth=1.2];
   edge [color="{P['muted']}", arrowsize=0.7];
   input [label="Input\\nvideo, link or .vtt", fillcolor="{P['board-light']}"];
   ingest [label="Ingest + timeline\\nduration, audio, class bounds"];
   subgraph cluster_core {{
-    label="Gemini Flash observer"; fontname="Helvetica"; fontsize=11; fontcolor="{P['ink']}";
+    label="Gemini Flash observer"; fontname="Helvetica"; fontsize=15; fontcolor="{P['ink']}";
     color="{P['met']}"; style="rounded";
     main [label="Full class pass\\n(low resolution)"];
     focus [label="Opening + closing\\n10-minute passes"];
@@ -31,7 +31,7 @@ digraph G {{
     main -> vote; focus -> vote;
   }}
   subgraph cluster_mod {{
-    label="Modules"; fontname="Helvetica"; fontsize=11; fontcolor="{P['ink']}"; color="{P['line']}"; style="rounded";
+    label="Modules"; fontname="Helvetica"; fontsize=15; fontcolor="{P['ink']}"; color="{P['line']}"; style="rounded";
     b1 [label="B1 transcript judge\\n(names pseudonymised)"];
     b2 [label="B2 audio delivery\\n(local, notes only)"];
     xc [label="XC camera + 8x8 check\\n(local)"];
@@ -52,7 +52,8 @@ def section(title: str, body_html: str) -> None:
 def main() -> None:
     pages = st.session_state.get("_pages")
     if pages:  # run inside the app's navigation (normal case)
-        st.page_link(pages["review"], label="← Back to the review")
+        if st.button("← Back to the review", type="tertiary"):
+            st.switch_page(pages["review"])
     else:  # run standalone
         st.markdown(theme_css(), unsafe_allow_html=True)
     st.markdown('<h1 class="cq-h1">How it works</h1>'

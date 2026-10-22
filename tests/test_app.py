@@ -130,7 +130,7 @@ def test_single_forced_chess_light_theme():
 def test_how_it_works_page_renders():
     at = st_testing.AppTest.from_file(APP, default_timeout=30)
     at.run()
-    at.switch_page("pages/how_it_works.py").run()
+    at.switch_page("views/how_it_works.py").run()
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     for heading in ("How it works", "Why it is built this way", "What we tried and dropped", "How it is evaluated",
@@ -151,7 +151,7 @@ def test_sidebar_settings_persist_across_pages():
     at = st_testing.AppTest.from_file(APP, default_timeout=30)
     at.run()
     next(c for c in at.checkbox if c.label.startswith("Audio delivery")).uncheck().run()
-    at.switch_page("pages/how_it_works.py").run()
+    at.switch_page("views/how_it_works.py").run()
     assert not at.exception
     assert at.session_state["cfg"]["b2"] is False  # same sidebar settings carried to the other page
     assert at.session_state["cfg"]["b2"] is False

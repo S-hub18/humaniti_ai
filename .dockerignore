@@ -1,0 +1,16 @@
+class recordings*
+class_recording*
+.scratch
+.superpowers
+.env
+.env.*
+.venv
+.git
+**/__pycache__
+.pytest_cache
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.vtt
+Humaniti_AI_24_Hour_Build_Challenge.pdf

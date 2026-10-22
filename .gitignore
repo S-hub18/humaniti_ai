@@ -1,0 +1,12 @@
+# Recordings contain children: never commit or upload
+class_recording/
+.scratch/
+.env
+__pycache__/
+.venv/
+.DS_Store
+class recordings*/
+.env.*
+!.env.example
+Humaniti_AI_24_Hour_Build_Challenge.pdf
+.superpowers/

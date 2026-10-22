@@ -56,7 +56,7 @@ Seven items, taken from the grader lines. Weights are fixed priors and are never
 | `closing` | Proper conclusion: recap and goodbye | 10 | ✗ B558 |
 | `new_joiner_intro` | New joiners are given time to self-introduce | 8 | ✗ B558, B482 |
 
-Item status values: `met` = 1.0, `partial` = 0.5, `not_met` = 0.0, `not_applicable` and `not_observable` = null (left out of the score; weights are renormalised). For `new_joiner_intro`, the answer is `not_applicable` when nobody joins for the first time.
+Item status values: `met` = 1.0, `partial` = 0.5, `not_met` = 0.0. `not_observable` (including claims dropped by evidence validation) is scored at a neutral prior of 0.5 and lowers coverage, so dropping a claim can never raise the score. `not_applicable` is honoured only for `new_joiner_intro`; anywhere else it is treated as `not_observable`. For `new_joiner_intro`, the answer is `not_applicable` when nobody joins for the first time.
 
 `camera_background` also returns sub-observations that drive the gates:
 - `branded_background`: present, absent or unclear
@@ -91,9 +91,9 @@ The focus calls use `start_offset` and `end_offset` on the same uploaded file. T
 
 | Item | Source |
 |---|---|
-| `rapport_intro`, `new_joiner_intro` | opening call; main call if the opening result is null |
-| `closing` | closing call; main call if the closing result is null |
-| `homework` | most positive status among the three calls that still has validated evidence (homework can be anywhere: B472 gave it at 45–47 min of a 56-min class) |
+| `rapport_intro`, `new_joiner_intro` | opening call; main call if the opening result is null. An opening `not_applicable` cannot override a main `not_met` |
+| `closing` | closing call; main call if the closing result is null. A closing `not_applicable` cannot override a main `not_met` |
+| `homework` | majority across the calls that report it; a tie goes to the stricter status |
 | `camera_background` and its sub-observations | most conservative non-null value across the calls |
 | `individual_calling`, `energy_warmth` | main call |
 
@@ -119,7 +119,7 @@ A `met` or `partial` status left with no valid evidence becomes `not_observable`
    - The majority vote across runs gives the session type.
    - `demo_trial` gives `grade = null`, `session_type = demo`, observations only.
    - `not_a_class` or `unknown` with agreement below 2/3 makes the scorer abstain.
-2. **Coverage:** if the non-null items cover less than 60% of the total weight, abstain with reason `insufficient_observations`.
+2. **Coverage:** abstain with reason `insufficient_observations` if the observed items cover less than 60% of the total weight, or if fewer than 5 of the 7 items were observed. With 5 of 7, most of the rubric is evidenced and no single item can swing the grade by more than one band.
 3. **Score:** `score = 100 * Σ w_i·v_i / Σ w_i` over non-null items.
 4. **Gates.** Gates only ever lower the grade.
    - `branded_background == absent` caps the grade at Poor and flags `compliance:no_branded_background` (B392).

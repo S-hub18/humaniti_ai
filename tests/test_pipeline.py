@@ -50,7 +50,10 @@ def test_pipeline_module_votes_and_gates():
                  module_votes=[ModuleVote(module="b1", item="homework", status=Status.NOT_MET, weight=2.0)],
                  gates=[GateSignal(module="xc", field="face_visible", value="rarely", n_frames=30)])
     assert run.assessment.items["homework"].status == Status.NOT_MET
-    assert run.assessment.grade == Grade.POOR and "compliance:face_not_visible" in run.assessment.flags
+    # AI says face mostly visible, XC says rarely: disagreement -> unclear + low confidence, no compliance cap
+    assert "crosscheck_disagree:face_visible" in run.assessment.flags
+    assert not any(f.startswith("compliance:") for f in run.assessment.flags)
+    assert run.assessment.confidence == "low" and run.assessment.grade != Grade.POOR
 
 
 def test_every_bullet_has_timestamp_or_not_observed():

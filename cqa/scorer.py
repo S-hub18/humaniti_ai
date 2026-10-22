@@ -92,14 +92,18 @@ def _weighted(items: dict[str, ItemConsensus], weights: dict[str, int]) -> tuple
 
 
 def _apply_gate_signals(camera: CameraObs, gates: list[GateSignal], flags: list[str]) -> CameraObs:
+    """Local crosscheck: fills an 'unclear' AI value; when both sides are decisive and DISAGREE, the field becomes
+    'unclear' (flag + low confidence) -- a disagreement never fires a compliance cap on its own."""
     fields = camera.model_dump()
     for g in gates:
-        if g.n_frames < MIN_GATE_FRAMES or g.field not in CAMERA_ORDER:
+        if g.n_frames < MIN_GATE_FRAMES or g.field not in CAMERA_ORDER or g.value == "unclear":
             continue
         current = fields[g.field]
-        if g.value != current and g.value != "unclear":
+        if current == "unclear":
+            fields[g.field] = g.value
+        elif g.value != current:
             flags.append(f"crosscheck_disagree:{g.field}")
-        fields[g.field] = conservative(g.field, [current, g.value])
+            fields[g.field] = "unclear"
     return CameraObs(**fields)
 
 
@@ -108,6 +112,7 @@ def _confidence(items: dict[str, ItemConsensus], score: float | None, cfg: Scori
     valued = [ic.agreement for ic in items.values() if STATUS_VALUE[ic.status] is not None]
     mean_agree = sum(valued) / len(valued) if valued else 0.0
     gate_unclear = not ignore_camera and (camera.branded_background == "unclear" or camera.face_visible == "unclear")
+    gate_unclear = gate_unclear or any(f.startswith("crosscheck_disagree") for f in flags)
     if mean_agree < LOW_AGREEMENT or gate_unclear:
         return "low"
     near = score is None or min(abs(score - c) for c in cfg.cutpoints) <= NEAR_CUTPOINT

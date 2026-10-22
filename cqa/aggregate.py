@@ -75,6 +75,18 @@ def conservative(field: str, values: Iterable[str]) -> str:
     return min(known, key=order.index)
 
 
+def majority_field(field: str, values: list[str]) -> str:
+    """Majority of non-'unclear' values across calls; a tie is 'unclear'. One focus window that saw a moment
+    (e.g. camera not yet on in the first minutes) must not decide a whole-class compliance gate."""
+    known = [v for v in values if v in CAMERA_ORDER[field]]
+    if not known:
+        return "unclear"
+    counts = Counter(known)
+    top = max(counts.values())
+    winners = [v for v, n in counts.items() if n == top]
+    return winners[0] if len(winners) == 1 else "unclear"
+
+
 def merge_calls(
     main: ObserverOutput,
     opening: ObserverOutput | None,
@@ -113,7 +125,7 @@ def merge_calls(
         items["camera_background"] = min(cam_items, key=lambda o: ORDINAL[o.status])
 
     cams = [c.camera for c in calls if c.camera is not None]
-    camera = CameraObs(**{f: conservative(f, (getattr(c, f) for c in cams)) for f in CAMERA_ORDER})
+    camera = CameraObs(**{f: majority_field(f, [getattr(c, f) for c in cams]) for f in CAMERA_ORDER})
 
     return MergedRun(
         items=items,

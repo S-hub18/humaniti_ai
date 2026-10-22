@@ -53,14 +53,14 @@ def test_merge_homework_agreeing_calls_and_closing_override():
     assert m.items["closing"].status == S.PARTIAL
 
 
-def test_merge_camera_conservative():
-    main = full_main()
+def test_merge_camera_majority_ignores_unclear():
+    main = full_main()  # present / mostly / mostly / ok
     opening = out("opening", {}, camera=CameraObs(branded_background="absent", face_visible="unclear", lighting="dim"))
     closing = out("closing", {}, camera=CameraObs(branded_background="present", face_visible="sometimes", lighting="ok"))
     m = merge_calls(main, opening, closing)
-    assert m.camera.branded_background == "absent"
-    assert m.camera.face_visible == "sometimes"  # unclear ignored
-    assert m.camera.lighting == "dim"
+    assert m.camera.branded_background == "present"  # 2 present vs 1 absent
+    assert m.camera.face_visible == "unclear"  # mostly vs sometimes tie (unclear ignored) -> unclear
+    assert m.camera.lighting == "ok"
 
 
 def test_missing_item_becomes_not_observable():
@@ -154,3 +154,26 @@ def test_focus_call_with_in_window_evidence_still_votes():
 def test_main_call_always_votes_on_homework():
     main = full_main(homework=io(S.NOT_MET))
     assert merge_calls(main, None, out("closing", {})).items["homework"].status == S.NOT_MET
+
+
+# ---- live B558 bug: one focus call saying "absent" must not make the whole class "absent" ----
+def test_camera_fields_majority_across_calls_not_most_conservative():
+    main = full_main()  # branded present
+    opening = out("opening", {}, camera=CameraObs(branded_background="absent", face_visible="sometimes"))
+    closing = out("closing", {}, camera=CameraObs(branded_background="present", face_visible="mostly"))
+    m = merge_calls(main, opening, closing)
+    assert m.camera.branded_background == "present"
+    assert m.camera.face_visible == "mostly"
+
+
+def test_camera_field_tie_across_calls_is_unclear_not_absent():
+    main = full_main()
+    opening = out("opening", {}, camera=CameraObs(branded_background="absent"))
+    m = merge_calls(main, opening, None)
+    assert m.camera.branded_background == "unclear"
+
+
+def test_camera_absent_when_calls_agree():
+    main = out("main", {}, camera=CameraObs(branded_background="absent"))
+    closing = out("closing", {}, camera=CameraObs(branded_background="absent"))
+    assert merge_calls(main, None, closing).camera.branded_background == "absent"

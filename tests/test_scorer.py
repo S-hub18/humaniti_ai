@@ -90,11 +90,13 @@ def test_session_unclear_abstains():
 
 def test_xc_gate_conservative_only():
     a = score(cons(), gates=[GateSignal(module="xc", field="branded_background", value="absent", n_frames=20)])
-    assert a.grade == Grade.POOR
+    assert a.grade == Grade.EXCELLENT and a.confidence == "low"  # disagreement -> unclear, not a cap
     assert "crosscheck_disagree:branded_background" in a.flags
     absent_cam = GOOD_CAM.model_copy(update={"branded_background": "absent"})
     b = score(cons(camera=absent_cam), gates=[GateSignal(module="xc", field="branded_background", value="present", n_frames=20)])
-    assert b.grade == Grade.POOR and "crosscheck_disagree:branded_background" in b.flags
+    # disagreement lowers confidence; it never fires a compliance cap on its own (live B558 bug)
+    assert b.grade == Grade.EXCELLENT and "crosscheck_disagree:branded_background" in b.flags
+    assert not any(f.startswith("compliance:") for f in b.flags) and b.confidence == "low"
     c = score(cons(), gates=[GateSignal(module="xc", field="branded_background", value="absent", n_frames=5)])
     assert c.grade == Grade.EXCELLENT and not any(f.startswith("crosscheck") for f in c.flags)
 
@@ -174,3 +176,15 @@ def test_transcript_only_scoring_caps_confidence_and_ignores_camera_gate():
     assert a.grade is not None and a.confidence == "medium"
     assert "transcript_only:no_camera" in a.flags
     assert not any(f.startswith("compliance:") for f in a.flags)
+
+
+def test_xc_agreeing_absent_still_caps():
+    absent_cam = GOOD_CAM.model_copy(update={"branded_background": "absent"})
+    a = score(cons(camera=absent_cam), gates=[GateSignal(module="xc", field="branded_background", value="absent", n_frames=20)])
+    assert a.grade == Grade.POOR and "compliance:no_branded_background" in a.flags
+
+
+def test_xc_fills_unclear_with_its_value():
+    unclear = GOOD_CAM.model_copy(update={"face_visible": "unclear"})
+    a = score(cons(camera=unclear), gates=[GateSignal(module="xc", field="face_visible", value="rarely", n_frames=40)])
+    assert a.grade == Grade.POOR and "compliance:face_not_visible" in a.flags

@@ -28,7 +28,6 @@ FLAG_KIND = {"compliance": "warn", "crosscheck_disagree": "note", "audio_defect"
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap');
 :root{
   --ink:#1F2A2E; --muted:#56646A; --page:#F4F6F2; --sq-light:#E9EEE6; --sq-dark:#8FA68F;
   --met:#2F6F4E; --partial:#B7862A; --notmet:#9E2F45; --na:#8A949A; --line:#D5DDD3;
@@ -37,8 +36,8 @@ CSS = """
   :root{ --ink:#E7ECE6; --muted:#A7B3AD; --page:#141A1C; --sq-light:#2A3532; --sq-dark:#4D6553;
          --met:#6FBF93; --partial:#E0B458; --notmet:#E07A8C; --na:#8E989E; --line:#2E3A37; }
 }
-html, body, [class*="css"], .stMarkdown, p, li, label { font-family:'Atkinson Hyperlegible', system-ui, sans-serif; }
-h1,h2,h3,.cq-display{ font-family:'Familjen Grotesk', system-ui, sans-serif; letter-spacing:-0.01em; color:var(--ink); }
+html, body, [class*="css"], .stMarkdown, p, li, label { font-family:'Atkinson Hyperlegible', 'Avenir Next', 'Segoe UI', system-ui, sans-serif; }
+h1,h2,h3,.cq-display{ font-family:'Familjen Grotesk', 'Avenir Next Condensed', 'Arial Narrow', system-ui, sans-serif; letter-spacing:-0.01em; color:var(--ink); }
 .block-container{ max-width:1080px; padding-top:2.2rem; }
 .cq-title{ font-size:2.4rem; font-weight:700; line-height:1.05; margin:0 0 .35rem 0; }
 .cq-sub{ color:var(--muted); font-size:1.05rem; max-width:62ch; margin-bottom:1.6rem; }
@@ -76,7 +75,9 @@ h1,h2,h3,.cq-display{ font-family:'Familjen Grotesk', system-ui, sans-serif; let
 
 
 def esc(s) -> str:
-    return html.escape(str(s))
+    """HTML-escape and collapse whitespace: a blank line would end Streamlit's HTML block and let the rest of
+    model text be parsed as Markdown (links, images)."""
+    return html.escape(" ".join(str(s).split()))
 
 
 def fmt_ts(sec: float) -> str:
@@ -161,9 +162,9 @@ def render_report(rep: dict) -> None:
     st.markdown("".join(item_html(it) for it in rep["items"]), unsafe_allow_html=True)
     mods = rep.get("modules", {})
     if mods:
-        with st.expander("Local checks (audio and frames)"):
+        with st.expander("Module checks (transcript, audio, frames)"):
             for name, m in mods.items():
-                title = {"b2": "Audio delivery", "xc": "Camera and background frames"}.get(name, name)
+                title = {"b1": "Transcript judge", "b2": "Audio delivery", "xc": "Camera and background frames"}.get(name, name)
                 st.markdown(f"**{title}**" + ("" if m["ok"] else f" (failed: {m['error']})"))
                 st.json(m["features"], expanded=False)
     st.markdown(
@@ -187,6 +188,9 @@ def main() -> None:
             mode = "Mock (no API cost)"
         tier = st.selectbox("Gemini model tier", list(MODELS), format_func=lambda t: f"{t} ({MODELS[t]})",
                             disabled=not mode.startswith("Gemini"))
+        b1 = st.checkbox("Transcript judge (Gemini)", value=True, disabled=not mode.startswith("Gemini"),
+                         help="Scores the transcript separately (your .vtt, or Gemini transcribes the audio). "
+                              "Children's names are replaced with Kid1, Kid2... before scoring.")
         b2 = st.checkbox("Audio delivery check (local)", value=True)
         xc = st.checkbox("Camera and background check (local)", value=True)
         st.markdown('<p class="cq-privacy">Files are processed in a temporary folder and deleted as soon as the review '
@@ -212,6 +216,7 @@ def main() -> None:
     sample = c2.button("Run a sample review", help="Generates a short synthetic test video and reviews it in Mock mode. "
                        "No real class, no API calls.")
     if sample:
+        st.session_state.pop("report", None)
         with st.spinner("Building a synthetic test video and reviewing it"):
             with tempfile.TemporaryDirectory(prefix="cqa_sample_") as tmp:
                 clip = Path(tmp) / "sample.mp4"
@@ -221,6 +226,7 @@ def main() -> None:
                 st.session_state["report"] = run_assessment(clip, mode="mock", modules={"b2": b2, "xc": xc})
 
     if go:
+        st.session_state.pop("report", None)  # never show a previous class's report under a new error
         bar = st.progress(0.0, text="Starting")
         try:
             with tempfile.TemporaryDirectory(prefix="cqa_upload_") as tmp:
@@ -236,7 +242,7 @@ def main() -> None:
                     vtt_path = tmpd / "transcript.vtt"
                     vtt_path.write_bytes(vtt.getbuffer())
                 rep = run_assessment(video, vtt_path=vtt_path, mode="gemini" if mode == "Gemini" else "mock",
-                                     tier=tier, modules={"b2": b2, "xc": xc},
+                                     tier=tier, modules={"b1": b1 and mode == "Gemini", "b2": b2, "xc": xc},
                                      progress=lambda msg, f: bar.progress(min(f, 1.0), text=msg))
             bar.empty()
             st.session_state["report"] = rep

@@ -28,6 +28,7 @@ from cqa.schema import TranscriptTurn
 from cqa.transcript import parse_vtt
 
 Progress = Callable[[str, float], None]
+DOWNLOAD_DEADLINE_S = 20 * 60
 MAX_BYTES = 600 * 1024 * 1024  # matches .streamlit maxUploadSize
 DRIVE_HOSTS = ("drive.google.com", "docs.google.com")
 
@@ -84,17 +85,24 @@ def _http(url: str, out: Path, max_bytes: int) -> Path:
         break
     else:
         raise InputError("Too many redirects.")
-    with r:
-        r.raise_for_status()
-        if int(r.headers.get("content-length") or 0) > max_bytes:
-            raise InputError(f"File is larger than {max_bytes // 1_000_000} MB.")
-        total = 0
-        with out.open("wb") as fh:
-            for chunk in r.iter_content(1 << 20):
-                total += len(chunk)
-                if total > max_bytes:
-                    raise InputError(f"File is larger than {max_bytes // 1_000_000} MB.")
-                fh.write(chunk)
+    deadline = time.monotonic() + DOWNLOAD_DEADLINE_S
+    try:
+        with r:
+            r.raise_for_status()
+            if int(r.headers.get("content-length") or 0) > max_bytes:
+                raise InputError(f"File is larger than {max_bytes // 1_000_000} MB.")
+            total = 0
+            with out.open("wb") as fh:
+                for chunk in r.iter_content(1 << 20):
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise InputError(f"File is larger than {max_bytes // 1_000_000} MB.")
+                    if time.monotonic() > deadline:
+                        raise InputError("The download took too long. Upload the file directly instead.")
+                    fh.write(chunk)
+    except BaseException:
+        out.unlink(missing_ok=True)
+        raise
     return out
 
 
@@ -135,6 +143,19 @@ def _observer(mode: str, tier: str):
     model = model_id(tier)
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
     return GeminiObserver(client, model=model), model
+
+
+def _run_b1(media, vtt_path, mode: str, observer) -> ModuleResult:
+    """B1 needs Gemini for judging (and for transcription when no .vtt is given)."""
+    if mode != "gemini":
+        return ModuleResult(module="b1", ok=False, error="the transcript judge needs Gemini mode")
+    from cqa.modules.b1_transcript import run_b1
+
+    try:
+        return run_b1(media.path, vtt_path, observer.client, observer.model, media.duration,
+                      min_interval_s=observer.min_call_interval_s)
+    except Exception as exc:
+        return ModuleResult(module="b1", ok=False, error=type(exc).__name__)
 
 
 def _secs(ts: str | None) -> float | None:
@@ -193,7 +214,10 @@ def run_assessment(
 
         say("Observing the class against the rubric", 0.55)
         observer, model = _observer(mode, tier)
-        votes = [v for r in results.values() for v in r.votes] if b2_vote else []
+        if modules.get("b1"):
+            say("Scoring the transcript (B1)", 0.45)
+            results["b1"] = _run_b1(media, vtt_path, mode, observer)
+        votes = [v for k, r in results.items() for v in r.votes if k != "b2" or b2_vote]
         gates = [g for r in results.values() for g in r.gates]
         flags = [f for r in results.values() for f in r.flags]
         run = assess(media, observer, PipelineConfig(), transcript=transcript,

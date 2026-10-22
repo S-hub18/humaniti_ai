@@ -81,10 +81,12 @@ def _temp_dirs():
     return {p for p in root.glob("cqa_*")}
 
 
-def test_run_assessment_mock_report(clip, tmp_path):
+def test_run_assessment_mock_report(clip, tmp_path, monkeypatch):
     vtt = tmp_path / "t.vtt"
     vtt.write_text(VTT)
-    before = _temp_dirs()
+    scratch = tmp_path / "tmp"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
     steps = []
     rep = run_assessment(clip, vtt_path=vtt, mode="mock", progress=lambda m, f: steps.append(f))
     for key in ("mode", "grade", "label", "score", "confidence", "session_type", "headline", "items", "flags",
@@ -94,7 +96,7 @@ def test_run_assessment_mock_report(clip, tmp_path):
     assert len(rep["items"]) == 7 and rep["timeline"]["duration"] == pytest.approx(20.0, abs=0.5)
     assert set(rep["modules"]) == {"b2", "xc"}
     assert steps == sorted(steps)
-    assert _temp_dirs() <= before  # all temp dirs removed
+    assert not list(scratch.glob("cqa_*"))  # all temp dirs removed
 
 
 def test_run_assessment_modules_off(clip):
@@ -148,3 +150,29 @@ def test_gemini_mode_uses_no_disk_cache(monkeypatch):
     monkeypatch.setattr(sys.modules["google"], "genai", fake, raising=False)
     obs, model = service._observer("gemini", "flash")
     assert type(obs).__name__ == "GeminiObserver" and "flash" in model
+
+
+def test_http_cap_mid_stream_removes_partial_file(tmp_path, monkeypatch):
+    import requests
+
+    class Resp:
+        is_redirect = False
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def raise_for_status(self): pass
+        def iter_content(self, n): yield b"x" * 600; yield b"x" * 600
+        def close(self): pass
+
+    monkeypatch.setattr(service, "check_public_url", lambda url: None)
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
+    out = tmp_path / "v"
+    with pytest.raises(InputError):
+        service._http("https://example.com/v.mp4", out, max_bytes=1000)
+    assert not out.exists()
+
+
+def test_b1_in_mock_mode_reports_unavailable(clip):
+    rep = run_assessment(clip, mode="mock", modules={"b1": True, "b2": False, "xc": False})
+    assert rep["modules"]["b1"]["ok"] is False and "Gemini" in rep["modules"]["b1"]["error"]
+    assert rep["label"]  # review still completes

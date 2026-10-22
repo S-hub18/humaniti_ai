@@ -114,9 +114,10 @@ def run_eval(
     media_resolver: Callable[[dict], MediaRef] = resolve_media,
     gt_path: Path = REPO / "eval" / "ground_truth_items.csv",
     silver_path: Path = REPO / "eval" / "silver_items.csv",
+    b1_provider: Callable[[dict, MediaRef], "ModuleResult"] | None = None,
 ) -> dict:
     entries = [e for e in entries if cfg.include_holdout or not e["holdout"]]
-    classes, runs_by_class, labels = [], {}, {}
+    classes, runs_by_class, labels, b1_votes = [], {}, {}, {}
     flips, diffs = [], []
     for e in entries:
         obs = observer_factory(e)
@@ -142,6 +143,10 @@ def run_eval(
             if e["ordinal"] is not None:
                 flips.append(rec["grade"] != rec["grade_b"])
                 diffs.append(abs((a.score or 0) - (b.score or 0)))
+        if b1_provider is not None:
+            b1 = b1_provider(e, media)
+            b1_votes[e["id"]] = b1.votes if b1.ok else []
+            rec["b1_ok"] = b1.ok
         classes.append(rec)
         runs_by_class[e["id"]] = run_a.runs
         labels[e["id"]] = e["ordinal"]
@@ -184,7 +189,8 @@ def run_eval(
             "latency_p50_s": statistics.median(lat) if lat else 0.0,
             "latency_max_s": max(lat) if lat else 0.0,
         },
-        "ablation": ablate(runs_by_class, labels, {}, {}, {"core": set()}, cfg.scoring),
+        "ablation": ablate(runs_by_class, labels, b1_votes, {},
+                           {"core": set(), "core+b1": {"b1"}} if b1_provider else {"core": set()}, cfg.scoring),
         "_runs": runs_by_class,
         "_labels": labels,
     }
@@ -268,12 +274,32 @@ def _gemini_factory() -> Callable[[dict], Observer]:
     return lambda e: observer
 
 
+def _b1_provider(client, model: str) -> Callable:
+    """B1 per class with a disk cache (eval only; the app never caches)."""
+    from cqa.modules import ModuleResult
+    from cqa.modules.b1_transcript import B1_PROMPT_VERSION, run_b1
+
+    root = REPO / ".scratch" / "cache" / "b1"
+    root.mkdir(parents=True, exist_ok=True)
+
+    def provide(e: dict, media: MediaRef) -> ModuleResult:
+        path = root / f"{media.sha256}-{model}-{B1_PROMPT_VERSION}.json"
+        if path.exists():
+            return ModuleResult.model_validate_json(path.read_text())
+        res = run_b1(media.path, None, client, model, media.duration, min_interval_s=65.0)
+        path.write_text(res.model_dump_json())
+        return res
+
+    return provide
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--observer", choices=["mock", "gemini"], default="mock")
     ap.add_argument("--samples", type=int, default=6)
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--include-holdout", action="store_true")
+    ap.add_argument("--b1", action="store_true", help="also run the B1 transcript judge (Gemini; audio transcription, no .vtt)")
     ap.add_argument("--out", default=str(REPO / ".scratch" / "eval_runs" / time.strftime("%Y%m%d-%H%M%S")))
     args = ap.parse_args(argv)
     cfg = EvalConfig(samples=args.samples, k=args.k, include_holdout=args.include_holdout, observer_kind=args.observer)
@@ -283,7 +309,14 @@ def main(argv: list[str] | None = None) -> None:
         resolver = lambda e: MediaRef(path=f"{e['id']}.mp4", sha256=e["id"], duration=3000.0)  # noqa: E731
     else:
         factory, resolver = _gemini_factory(), resolve_media
-    result = run_eval(entries, factory, cfg, media_resolver=resolver)
+    b1 = None
+    if args.b1 and args.observer == "gemini":
+        from google import genai
+
+        from cqa.config import model_id
+
+        b1 = _b1_provider(genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000}), model_id())
+    result = run_eval(entries, factory, cfg, media_resolver=resolver, b1_provider=b1)
     print(write_report(result, args.out))
 
 

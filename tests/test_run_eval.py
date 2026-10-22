@@ -73,3 +73,16 @@ def test_ablation_no_observer_calls(tmp_path):
     names = [r["config"] for r in rows]
     assert names == ["core", "core+b1"]
     assert all({"exact", "within1", "mae", "spearman", "pairwise"} <= set(r) for r in rows)
+
+
+def test_ablation_includes_b1_row_when_provider_given(tmp_path):
+    from cqa.modules import ModuleResult
+
+    def b1(entry, media):
+        return ModuleResult(module="b1", votes=[ModuleVote(module="b1", item="homework", status=Status.NOT_MET)])
+
+    factory = CountingFactory()
+    result = run_eval(load_dataset(ROOT / "eval" / "dataset.yaml"), factory, EvalConfig(samples=3, k=3),
+                      media_resolver=fake_media, b1_provider=b1)
+    assert [r["config"] for r in result["ablation"]] == ["core", "core+b1"]
+    assert all(c.get("b1_ok") for c in result["classes"])

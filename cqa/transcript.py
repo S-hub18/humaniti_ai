@@ -38,5 +38,5 @@ def parse_vtt(text: str) -> list[TranscriptTurn]:
             role = "kid"
         else:
             role = "other"
-        turns.append(TranscriptTurn(start=a, end=b, role=role, text=utt))
+        turns.append(TranscriptTurn(start=a, end=b, role=role, text=utt, speaker=spk or None))
     return turns

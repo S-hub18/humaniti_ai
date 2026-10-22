@@ -52,6 +52,7 @@ class TranscriptTurn(BaseModel):
     end: float
     role: Literal["teacher", "kid", "media", "other"]
     text: str
+    speaker: str | None = None
 
 
 def _enum(values) -> dict:

@@ -113,6 +113,26 @@ On Hugging Face Spaces (Docker SDK), add `GEMINI_API_KEY` as a Space secret. The
 theme is fixed in `.streamlit/config.toml`. Only one Gemini review runs at a time across all users, because they share
 one quota; other users are told they're next.
 
+### Streamlit Community Cloud
+
+1. New app, then pick this repo, branch `main`, main file `app/streamlit_app.py`. Python 3.12.
+   - Dependencies install from `uv.lock`.
+   - System packages come from `packages.txt` (`ffmpeg`, which provides `ffprobe`).
+2. Under **Settings, then Secrets**, add your key in TOML format:
+
+   ```toml
+   GEMINI_API_KEY = "your-key"
+   # optional
+   FREE_TIER = "1"
+   ```
+
+   Top-level secrets are exposed to the app as environment variables. The key is never logged.
+3. **After every push, reboot the app (Manage app, then Reboot).** Streamlit hot-reloads only the main script, so
+   already-imported `cqa` modules stay on the old version until a reboot. That shows up as an `ImportError` at
+   startup.
+4. Community Cloud has about 1 GB of RAM. Uploads are streamed to disk, but very large recordings can still be tight.
+   Prefer a Google Drive link, or keep uploads well under the 600 MB limit.
+
 ## Evaluation
 
 ```bash

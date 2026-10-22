@@ -176,3 +176,16 @@ def test_app_shows_lost_upload_message_for_empty_buffer(monkeypatch):
         svc.check_upload_bytes(memoryview(b""), 5_000_000)
     src = Path(APP).read_text()
     assert "check_upload_bytes(data, getattr(upload, \"size\", None))" in src
+
+
+def test_missing_ffmpeg_shows_clear_error(monkeypatch):
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    assert any("missing ffmpeg" in e.value for e in at.error)
+
+
+def test_packages_txt_installs_ffmpeg():
+    assert (Path(APP).parents[1] / "packages.txt").read_text().split() == ["ffmpeg"]

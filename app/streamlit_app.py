@@ -214,6 +214,11 @@ def sidebar() -> dict:
 
 
 def review_page() -> None:
+    import shutil
+
+    if shutil.which("ffprobe") is None or shutil.which("ffmpeg") is None:
+        st.error("This server is missing ffmpeg/ffprobe, so recordings can't be read. On Streamlit Cloud, make sure "
+                 "packages.txt (with `ffmpeg`) is in the repo root, then reboot the app.")
     cfg = st.session_state["cfg"]
     mode, tier, b1, b2, xc = cfg["mode"], cfg["tier"], cfg["b1"], cfg["b2"], cfg["xc"]
     st.markdown('<h1 class="cq-h1">Review a recorded chess class</h1>'

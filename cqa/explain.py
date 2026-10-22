@@ -22,6 +22,7 @@ FLAG_TEXT = {
     "compliance:no_branded_background": "Compliance: the 8x8 branded background was not used (grade capped at Poor).",
     "compliance:face_not_visible": "Compliance: the teacher's face was rarely visible (grade capped at Poor).",
     "improve:camera_off_at_times": "Teacher camera was off at times while teaching.",
+    "transcript_only:no_camera": "Transcript-only review: camera and background can't be judged from a transcript, so that item is not scored and confidence is at most medium.",
     "cap:two_not_met": "Two checklist items were clearly not met, so the grade is capped at Average.",
     "cap:three_or_more_not_met": "Three or more checklist items were clearly not met, so the grade is capped at Poor.",
 }

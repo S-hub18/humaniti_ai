@@ -27,6 +27,7 @@ from cqa.observer import MockObserver, Observer
 from cqa.pipeline import PipelineConfig, assess
 from cqa.rubric import ITEM_IDS, Status
 from cqa.scorer import GateSignal, ScoringConfig, grade_from_score, score
+from cqa.service import run_transcript_review
 from eval.loo import loo_eval
 from eval.metrics import exact_acc, item_accuracy, mae, majority_baseline, pairwise_acc, spearman, within1_acc
 
@@ -54,6 +55,45 @@ def resolve_media(entry: dict) -> MediaRef:
     if len(matches) != 1:
         raise FileNotFoundError(f"{entry['id']}: expected 1 video for {entry['video_glob']!r}, found {len(matches)}")
     return probe(matches[0])
+
+
+def resolve_vtt(entry: dict) -> Path:
+    folder = Path(entry["root"]) / entry["folder"]
+    matches = sorted(folder.glob(entry["vtt_glob"]))
+    if len(matches) != 1:
+        raise FileNotFoundError(f"{entry['id']}: expected 1 transcript for {entry['vtt_glob']!r}, found {len(matches)}")
+    return matches[0]
+
+
+def run_transcript_eval(entries: list[dict], cfg: EvalConfig) -> dict:
+    """Transcript-only mode: every class reviewed from its .vtt alone (no video), same scorer and metrics."""
+    entries = [e for e in entries if cfg.include_holdout or not e["holdout"]]
+    classes = []
+    for e in entries:
+        rep = run_transcript_review(resolve_vtt(e), mode=cfg.observer_kind)
+        classes.append({
+            "id": e["id"], "label": e["label"], "ordinal": e["ordinal"], "holdout": e["holdout"],
+            "grade": rep["grade"], "score": rep["score"], "session_type": rep["session_type"],
+            "confidence": rep["confidence"], "flags": rep["flags"], "abstain_reason": rep["abstain_reason"],
+            "cost_usd": rep.get("cost_usd", 0.0), "latency_s": rep.get("latency_s", 0.0),
+        })
+    graded = [c for c in classes if c["ordinal"] is not None]
+    y = [c["ordinal"] for c in graded]
+    s = [c["score"] or 0.0 for c in graded]
+    p = [c["grade"] if c["grade"] is not None else int(grade_from_score(c["score"] or 0.0, cfg.scoring.cutpoints)) for c in graded]
+    metrics = _grade_metrics(y, p, s)
+    base = majority_baseline(y)
+    metrics.update(baseline_exact=exact_acc(y, base), baseline_within1=within1_acc(y, base), baseline_mae=mae(y, base),
+                   n_abstain=sum(c["grade"] is None for c in graded))
+    lat = [c["latency_s"] for c in classes]
+    return {
+        "mode": "transcript", "observer": cfg.observer_kind, "config": cfg.model_dump(), "classes": classes,
+        "metrics": metrics, "loo": loo_eval(s, y, cfg.scoring.cutpoints) if len(y) >= 3 else {},
+        "variance": {"n": 0, "flip_rate": None, "mean_abs_score_diff": None}, "items": {},
+        "cost_latency": {"cost_per_class_usd": statistics.mean([c["cost_usd"] for c in classes]) if classes else 0.0,
+                         "latency_p50_s": statistics.median(lat) if lat else 0.0, "latency_max_s": max(lat) if lat else 0.0},
+        "ablation": [],
+    }
 
 
 def _read_rows(path: Path, ids: set[str]) -> list[dict]:
@@ -299,11 +339,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--samples", type=int, default=6)
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--include-holdout", action="store_true")
+    ap.add_argument("--mode", choices=["video", "transcript"], default="video",
+                    help="transcript: review each class from its .vtt alone (no video)")
     ap.add_argument("--b1", action="store_true", help="also run the B1 transcript judge (Gemini; audio transcription, no .vtt)")
     ap.add_argument("--out", default=str(REPO / ".scratch" / "eval_runs" / time.strftime("%Y%m%d-%H%M%S")))
     args = ap.parse_args(argv)
     cfg = EvalConfig(samples=args.samples, k=args.k, include_holdout=args.include_holdout, observer_kind=args.observer)
     entries = load_dataset(REPO / "eval" / "dataset.yaml")
+    if args.mode == "transcript":
+        print(write_report(run_transcript_eval(entries, cfg), args.out))
+        return
     if args.observer == "mock":
         factory = _gt_oracle_factory()
         resolver = lambda e: MediaRef(path=f"{e['id']}.mp4", sha256=e["id"], duration=3000.0)  # noqa: E731

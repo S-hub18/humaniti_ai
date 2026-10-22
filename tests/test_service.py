@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -144,6 +145,9 @@ def test_gemini_mode_uses_no_disk_cache(monkeypatch):
     import sys
     import types as _t
 
+    import google.genai  # noqa: F401  (ensure the real package is loaded before patching)
+    import cqa.gemini_observer  # noqa: F401
+
     monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
     fake = _t.SimpleNamespace(Client=lambda api_key, **kw: object())
     monkeypatch.setitem(sys.modules, "google.genai", fake)
@@ -191,3 +195,91 @@ def test_gemini_retry_progress_reaches_ui_callback(clip, monkeypatch):
     monkeypatch.setattr(service, "_observer", fake_observer)
     run_assessment(clip, mode="gemini", modules={}, progress=lambda m, f: msgs.append(m))
     assert "Gemini is busy, retrying… (attempt 1/4)" in msgs
+
+
+# ---- transcript-only review ----
+def test_transcript_only_review_mock(tmp_path):
+    from cqa.service import run_transcript_review
+
+    vtt = tmp_path / "t.vtt"
+    vtt.write_text(VTT)
+    rep = run_transcript_review(vtt, mode="mock")
+    assert rep["review_type"] == "transcript"
+    items = {it["id"]: it for it in rep["items"]}
+    assert items["camera_background"]["status"] == "not_observable"
+    assert rep["label"] in ("Poor", "Average", "Good", "Excellent")
+    assert rep["confidence"] in ("medium", "low")
+    assert any("transcript" in t.lower() and "camera" in t.lower() for t in rep["flag_text"])
+    for name in ("Ms Teacher", "Kid One"):
+        assert name not in json.dumps(rep)  # pseudonymised before anything is shown
+
+
+def test_transcript_only_review_gemini_with_fake_client(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from cqa.modules.b1_transcript import B1_ITEMS
+    from cqa.service import run_transcript_review
+
+    vtt = tmp_path / "t.vtt"
+    vtt.write_text(VTT)
+    items = {i: {"status": "met", "rationale": "r",
+                 "evidence": [{"t_start": "00:31", "quote": "Kid1, what is the best move here?", "observation": "o"}]}
+             for i in B1_ITEMS}
+    resp = SimpleNamespace(text=json.dumps({"items": items}),
+                           usage_metadata=SimpleNamespace(prompt_token_count=900, candidates_token_count=90, thoughts_token_count=0))
+    sent = []
+    fake = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kw: sent.append(kw) or resp), files=None)
+    monkeypatch.setattr(service, "_gemini_client", lambda: fake)
+    rep = run_transcript_review(vtt, mode="gemini")
+    assert rep["review_type"] == "transcript" and rep["mode"] == "gemini" and len(sent) == 1
+    assert "Ms Teacher" not in str(sent[0]["contents"]) and "Kid One" not in str(sent[0]["contents"])
+    assert rep["label"] == "Excellent" and rep["confidence"] == "medium"  # capped at medium
+    assert {it["id"]: it["status"] for it in rep["items"]}["camera_background"] == "not_observable"
+
+
+def test_transcript_only_bad_file(tmp_path):
+    from cqa.service import run_transcript_review
+
+    bad = tmp_path / "t.vtt"
+    bad.write_text("WEBVTT\n\n")
+    with pytest.raises(InputError):
+        run_transcript_review(bad, mode="mock")
+
+
+def test_review_gate_one_at_a_time():
+    import threading
+    import time as _time
+
+    from cqa.service import ReviewGate
+
+    gate = ReviewGate()
+    order, waited = [], []
+    with gate.slot(on_wait=lambda s: None):
+        t = threading.Thread(target=lambda: gate.slot(on_wait=lambda s: waited.append(s), poll_s=0.01).__enter__() or order.append("second"))
+        t.start()
+        _time.sleep(0.1)
+        assert order == [] and waited  # second job is waiting, told it's next
+        order.append("first-done")
+    t.join(2)
+    assert order == ["first-done", "second"]
+
+
+def test_gemini_progress_names_steps_with_eta(clip, monkeypatch):
+    from cqa.observer import MockObserver
+    from cqa.rubric import ITEM_IDS, Status
+
+    class Hooked(MockObserver):
+        on_call = None
+
+        def observe(self, media, spec, idx):
+            if self.on_call:
+                self.on_call(spec.name)
+            return super().observe(media, spec, idx)
+
+    msgs = []
+    monkeypatch.setattr(service, "_observer", lambda mode, tier, on_retry=None: (Hooked(oracle={i: Status.MET for i in ITEM_IDS}), "gemini-test-flash"))
+    run_assessment(clip, mode="gemini", modules={}, progress=lambda m, f: msgs.append(m))
+    text = " | ".join(msgs)
+    for step in ("main video call", "opening", "closing"):
+        assert step in text
+    assert "about" in text  # rough ETA shown

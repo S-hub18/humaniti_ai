@@ -103,10 +103,11 @@ def _apply_gate_signals(camera: CameraObs, gates: list[GateSignal], flags: list[
     return CameraObs(**fields)
 
 
-def _confidence(items: dict[str, ItemConsensus], score: float | None, cfg: ScoringConfig, camera: CameraObs, flags: list[str]) -> str:
+def _confidence(items: dict[str, ItemConsensus], score: float | None, cfg: ScoringConfig, camera: CameraObs,
+                flags: list[str], ignore_camera: bool = False) -> str:
     valued = [ic.agreement for ic in items.values() if STATUS_VALUE[ic.status] is not None]
     mean_agree = sum(valued) / len(valued) if valued else 0.0
-    gate_unclear = camera.branded_background == "unclear" or camera.face_visible == "unclear"
+    gate_unclear = not ignore_camera and (camera.branded_background == "unclear" or camera.face_visible == "unclear")
     if mean_agree < LOW_AGREEMENT or gate_unclear:
         return "low"
     near = score is None or min(abs(score - c) for c in cfg.cutpoints) <= NEAR_CUTPOINT
@@ -116,14 +117,22 @@ def _confidence(items: dict[str, ItemConsensus], score: float | None, cfg: Scori
     return "medium"
 
 
+def _cap_conf(conf: str, transcript_only: bool) -> str:
+    return "medium" if transcript_only and conf == "high" else conf
+
+
 def score(
     c: Consensus,
     cfg: ScoringConfig | None = None,
     gates: list[GateSignal] | None = None,
     flags: list[str] | None = None,
+    transcript_only: bool = False,
 ) -> Assessment:
+    """`transcript_only`: no video, so camera/background are unknowable: no camera gates, confidence capped at medium."""
     cfg = cfg or ScoringConfig()
     flags = list(flags or [])
+    if transcript_only:
+        flags.append("transcript_only:no_camera")
     camera = _apply_gate_signals(c.camera, gates or [], flags)
     value, coverage, n_graded = _weighted(c.items, cfg.weights)
 
@@ -162,7 +171,7 @@ def score(
         grade=grade,
         score=value,
         session_type=session,
-        confidence=_confidence(c.items, value, cfg, camera, flags),
+        confidence=_cap_conf(_confidence(c.items, value, cfg, camera, flags, ignore_camera=transcript_only), transcript_only),
         flags=flags,
         abstain_reason=abstain,
         items=c.items,

@@ -86,3 +86,19 @@ def test_ablation_includes_b1_row_when_provider_given(tmp_path):
                       media_resolver=fake_media, b1_provider=b1)
     assert [r["config"] for r in result["ablation"]] == ["core", "core+b1"]
     assert all(c.get("b1_ok") for c in result["classes"])
+
+
+def test_transcript_mode_runs_on_vtts_only(tmp_path, monkeypatch):
+    from eval import run_eval as re_mod
+
+    calls = []
+
+    def fake_review(vtt_path, mode="mock", tier="flash", progress=None):
+        calls.append(vtt_path)
+        return {"grade": 2, "label": "Good", "score": 75.0, "confidence": "medium", "session_type": "regular_class",
+                "flags": [], "abstain_reason": None, "items": [], "cost_usd": 0.0, "latency_s": 0.1}
+
+    monkeypatch.setattr(re_mod, "run_transcript_review", fake_review)
+    monkeypatch.setattr(re_mod, "resolve_vtt", lambda e: Path(f"{e['id']}.vtt"))
+    res = re_mod.run_transcript_eval(load_dataset(ROOT / "eval" / "dataset.yaml"), EvalConfig(observer_kind="mock"))
+    assert res["mode"] == "transcript" and res["metrics"]["n"] == 8 and len(calls) == 10

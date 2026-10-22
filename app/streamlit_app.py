@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 
 import streamlit as st
@@ -19,9 +20,14 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cqa.config import MODELS, load_dotenv  # noqa: E402
-from cqa.service import InputError, fetch_input, run_assessment  # noqa: E402
+from cqa.config import free_tier  # noqa: E402
+from cqa.service import GATE, InputError, fetch_input, run_assessment, run_transcript_review  # noqa: E402
 
 log = logging.getLogger("cqa.app")
+
+
+class _Done(Exception):
+    """Internal: transcript-only path finished inside the shared temp/lock context."""
 GRADES = ["Poor", "Average", "Good", "Excellent"]
 STATUS_TEXT = {"met": "Met", "partial": "Partly met", "not_met": "Not met",
                "not_applicable": "Not applicable", "not_observable": "Not observed"}
@@ -67,7 +73,8 @@ h1,h2,h3,.cq-display{ font-family:'Familjen Grotesk', 'Avenir Next Condensed', '
 .cq-quote{ color:var(--muted); font-style:italic; }
 .cq-agree{ grid-column:1/-1; color:var(--muted); font-size:.85rem; }
 .cq-foot{ color:var(--muted); font-size:.88rem; border-top:1px solid var(--line); margin-top:1.6rem; padding-top:.8rem; }
-[data-testid="stFileUploaderDropzoneInstructions"] small{ display:none; }
+[data-testid="stFileUploaderDropzoneInstructions"]{ display:none !important; }
+.cq-badge{ display:inline-block; margin:0 0 .8rem 0; padding:.2rem .7rem; border:2px solid var(--ink); border-radius:4px; font-weight:700; color:var(--ink); }
 .cq-privacy{ color:var(--muted); font-size:.88rem; max-width:62ch; }
 @media (max-width:640px){ .cq-title{font-size:1.8rem;} .cq-piece{font-size:1.8rem;} .cq-sq{font-size:.85rem;} }
 @media (prefers-reduced-motion: no-preference){ .cq-sq.on .cq-piece{ animation:cq-drop .5s ease-out 1; } }
@@ -152,6 +159,8 @@ def flags_html(rep: dict) -> str:
 
 
 def render_report(rep: dict) -> None:
+    if rep.get("review_type") == "transcript":
+        st.markdown('<div class="cq-badge">Transcript-only review</div>', unsafe_allow_html=True)
     if rep["mode"] == "mock":
         st.markdown('<div class="cq-mock"><b>Mock result.</b> This review used the built-in demo observer, not an AI model. '
                     'Switch to Gemini mode for a real assessment.</div>', unsafe_allow_html=True)
@@ -204,18 +213,25 @@ def main() -> None:
                 '<div class="cq-sub">Upload a class recording or paste a link. You get a grade from Poor to Excellent, '
                 'with timestamped evidence for each part of the 8x8 teaching rubric.</div>', unsafe_allow_html=True)
 
-    src_tab, link_tab = st.tabs(["Upload a recording", "Paste a link"])
+    src_tab, link_tab, tx_tab = st.tabs(["Upload a recording", "Paste a link", "Transcript only"])
     with src_tab:
         upload = st.file_uploader("Class recording", type=["mp4", "mov", "mkv", "webm"], max_upload_size=600,
                                   help="MP4, MOV, MKV or WEBM, up to 600 MB.")
         st.caption("MP4, MOV, MKV or WEBM, up to 600 MB.")
     with link_tab:
         link = st.text_input("Google Drive share link or direct video link", placeholder="https://drive.google.com/file/d/...")
+    with tx_tab:
+        vtt_only = st.file_uploader("Zoom transcript (.vtt)", type=["vtt"], max_upload_size=5, key="vtt_only",
+                                    help="No video needed. The camera and background item can't be judged from text.")
+        st.caption("Review from the transcript alone. Children's names are replaced with Kid1, Kid2… before scoring.")
     vtt = st.file_uploader("Zoom transcript (.vtt, optional)", type=["vtt"], max_upload_size=5,
                            help="If you have the Zoom transcript, add it. It improves quote checking.")
 
     c1, c2 = st.columns([1, 2])
-    go = c1.button("Review this class", type="primary", disabled=not (upload or link))
+    if mode == "Gemini" and free_tier():
+        st.info("Running on the Gemini free tier. A one-hour class takes about 10 to 15 minutes (the main video pass "
+                "alone took about 6.5 minutes in testing). The app waits out rate limits automatically.")
+    go = c1.button("Review this class", type="primary", disabled=not (upload or link or vtt_only))
     sample = c2.button("Run a sample review", help="Generates a short synthetic test video and reviews it in Mock mode. "
                        "No real class, no API calls.")
     if sample:
@@ -231,9 +247,18 @@ def main() -> None:
     if go:
         st.session_state.pop("report", None)  # never show a previous class's report under a new error
         bar = st.progress(0.0, text="Starting")
+        engine = "gemini" if mode == "Gemini" else "mock"
+        progress = lambda msg, f: bar.progress(min(f, 1.0), text=msg)  # noqa: E731
         try:
-            with tempfile.TemporaryDirectory(prefix="cqa_upload_") as tmp:
+            with GATE.slot(on_wait=lambda s: bar.progress(0.0, text=f"Another review is running. You're next (waiting {s:.0f}s).")) \
+                    if engine == "gemini" else nullcontext(), tempfile.TemporaryDirectory(prefix="cqa_upload_") as tmp:
                 tmpd = Path(tmp)
+                if upload is None and not link and vtt_only is not None:
+                    tx = tmpd / "transcript.vtt"
+                    tx.write_bytes(vtt_only.getbuffer())
+                    rep = run_transcript_review(tx, mode=engine, tier=tier, progress=progress)
+                    st.session_state["report"] = rep
+                    raise _Done
                 if upload is not None:
                     video = tmpd / f"upload{Path(upload.name).suffix.lower()}"
                     video.write_bytes(upload.getbuffer())
@@ -244,11 +269,13 @@ def main() -> None:
                 if vtt is not None:
                     vtt_path = tmpd / "transcript.vtt"
                     vtt_path.write_bytes(vtt.getbuffer())
-                rep = run_assessment(video, vtt_path=vtt_path, mode="gemini" if mode == "Gemini" else "mock",
+                rep = run_assessment(video, vtt_path=vtt_path, mode=engine,
                                      tier=tier, modules={"b1": b1 and mode == "Gemini", "b2": b2, "xc": xc},
-                                     progress=lambda msg, f: bar.progress(min(f, 1.0), text=msg))
+                                     progress=progress)
+                st.session_state["report"] = rep
             bar.empty()
-            st.session_state["report"] = rep
+        except _Done:
+            bar.empty()
         except InputError as exc:
             bar.empty()
             st.error(str(exc))

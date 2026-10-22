@@ -308,3 +308,18 @@ def test_upload_and_processing_poll_are_retried():
     client.files.upload, client.files.get = up, get
     obs.observe(MEDIA, CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low"), 0)
     assert n["up"] == 2 and n["get"] >= 2
+
+
+def test_spacing_wait_counts_down_and_on_call_hook():
+    obs, _ = make([payload("main")])
+    obs._sleep = lambda s: None
+    obs.min_call_interval_s = 65.0
+    waits, calls = [], []
+    obs.on_wait = lambda rem, a, m, kind: waits.append((rem, kind))
+    obs.on_call = calls.append
+    spec = CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low")
+    with obs.session(MEDIA):
+        obs.observe(MEDIA, spec, 0)
+        obs.observe(MEDIA, spec, 1)
+    assert calls == ["main", "main"]
+    assert waits and waits[0][1] == "spacing" and waits[0][0] >= 60

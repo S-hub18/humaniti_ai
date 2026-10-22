@@ -7,6 +7,7 @@ frames) lives in a temp dir that is deleted in `finally`. Transcript text is nev
 from __future__ import annotations
 
 import ipaddress
+from contextlib import contextmanager
 import os
 import shutil
 import socket
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Callable, Literal
 from urllib.parse import urlparse
 
-from cqa.config import load_dotenv, model_id
+from cqa.config import call_spacing_s, load_dotenv, model_id
 from cqa.evidence import parse_ts
 from cqa.explain import build_explanation
 from cqa.media import probe
@@ -141,8 +142,67 @@ def _observer(mode: str, tier: str, on_retry=None):
 
     # No CachedObserver here: the app must not persist observations about a class (cache is eval-only).
     model = model_id(tier)
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
-    return GeminiObserver(client, model=model, on_retry=on_retry), model
+    return GeminiObserver(_gemini_client(), model=model, on_retry=on_retry, min_call_interval_s=call_spacing_s()), model
+
+
+STEPS = {"main": ("main video call", 0.6), "opening": ("opening 10 minutes", 0.75), "closing": ("closing 10 minutes", 0.88)}
+
+
+def _eta_s(name: str, duration: float) -> float:
+    """Rough per-call time from what we measured (B472: ~390 s for the 56-min main call incl. upload)."""
+    if name == "main":
+        return 60.0 + 330.0 * duration / 3600.0
+    return 90.0 + call_spacing_s()
+
+
+def _attach_progress(observer, duration: float, say: Progress) -> None:
+    """Hook live step + ETA and countdown messages into a Gemini observer (no-op for observers without hooks)."""
+    if hasattr(observer, "on_call"):
+        def on_call(name: str) -> None:
+            label, frac = STEPS.get(name, (name, 0.6))
+            say(f"Step: {label} (about {max(1, round(_eta_s(name, duration) / 60))} min)", frac)
+        observer.on_call = on_call
+    if hasattr(observer, "on_wait"):
+        def on_wait(rem: int, attempt: int, max_retries: int, kind: str) -> None:
+            if kind == "spacing":
+                say(f"Free-tier pacing: next Gemini call in {rem}s", 0.6)
+            elif kind == "rate_limit":
+                say(f"Rate limit hit, waiting {rem}s before retrying (attempt {attempt}/{max_retries})", 0.6)
+            else:
+                say(f"Gemini is busy, waiting {rem}s before retrying (attempt {attempt}/{max_retries})", 0.6)
+        observer.on_wait = on_wait
+
+
+class ReviewGate:
+    """One Gemini review at a time across all app sessions (shared quota). Others wait and are told they're next."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def slot(self, on_wait: Callable[[float], None], poll_s: float = 2.0):
+        waited = 0.0
+        while not self._lock.acquire(timeout=poll_s):
+            waited += poll_s
+            on_wait(waited)
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+
+GATE = ReviewGate()
+
+
+def _gemini_client():
+    load_dotenv()
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise RuntimeError("Gemini mode needs GEMINI_API_KEY. Set it in the environment, or use Mock mode.")
+    from google import genai
+
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
 
 
 def _run_b1(media, vtt_path, mode: str, observer) -> ModuleResult:
@@ -218,6 +278,7 @@ def run_assessment(
             say(f"Gemini is {what}, retrying… (attempt {attempt}/{max_retries})", 0.55)
 
         observer, model = _observer(mode, tier, on_retry=busy)
+        _attach_progress(observer, media.duration, say)
         if modules.get("b1"):
             say("Scoring the transcript (B1)", 0.45)
             results["b1"] = _run_b1(media, vtt_path, mode, observer)
@@ -279,4 +340,86 @@ def _report(run, duration: float, mode: str, model: str, results: dict, wall: fl
         "input_tokens": sum(s.input_tokens for s in run.stats),
         "output_tokens": sum(s.output_tokens for s in run.stats),
         "latency_s": round(wall, 1),
+        "review_type": "video",
     }
+
+
+# ------------------------------------------------------------------ transcript-only review
+class _MockJudgeClient:
+    """Mock-mode stand-in for the Gemini text judge: MOCK_ORACLE statuses, evidence quoted from real (pseudonymised)
+    teacher lines so it survives validation. No API calls."""
+
+    def __init__(self, turns: list[TranscriptTurn]):
+        from cqa.evidence import fmt_ts
+
+        teacher = [t for t in turns if t.role == "teacher"] or turns
+        self._ev = [{"t_start": fmt_ts(t.start), "quote": t.text[:120], "observation": "mock evidence (demo observer)"}
+                    for t in teacher[:3]]
+        self.models = self
+
+    def generate_content(self, model, contents, config):
+        import json as _json
+        from types import SimpleNamespace
+
+        from cqa.modules.b1_transcript import B1_ITEMS
+
+        items = {}
+        for i in B1_ITEMS:
+            st = MOCK_ORACLE.get(i, Status.NOT_OBSERVABLE)
+            ev = self._ev[:1] if st in (Status.MET, Status.PARTIAL) else []
+            items[i] = {"status": st.value, "evidence": ev, "rationale": "mock"}
+        return SimpleNamespace(text=_json.dumps({"items": items}), usage_metadata=None)
+
+
+def run_transcript_review(vtt_path: Path, mode: Literal["mock", "gemini"] = "mock", tier: str = "flash",
+                          progress: Progress | None = None) -> dict:
+    """Full review from a Zoom .vtt alone: parse -> pseudonymise + leak check -> B1 judge -> same scorer.
+    Camera/background can't be judged from text: that item is not_observable and confidence is capped at medium."""
+    from types import SimpleNamespace
+
+    from cqa.aggregate import Consensus, ItemConsensus
+    from cqa.modules.b1_transcript import LeakError, judge, leak_check, pseudonymise
+    from cqa.observer import CallStats
+    from cqa.rubric import ITEM_IDS
+    from cqa.schema import CameraObs
+    from cqa.scorer import score
+
+    say = progress or (lambda _m, _f: None)
+    t0 = time.monotonic()
+    say("Reading the transcript", 0.1)
+    turns = parse_vtt(Path(vtt_path).read_text(encoding="utf-8", errors="replace"))
+    if not turns:
+        raise InputError("This .vtt has no transcript lines. Upload a Zoom transcript (.vtt) with speaker cues.")
+    duration = max(t.end for t in turns)
+    say("Replacing children's names with Kid1, Kid2…", 0.25)
+    pseudo, mapping = pseudonymise(turns)
+    try:
+        leak_check(pseudo, mapping["names"])
+    except LeakError as exc:
+        raise InputError("The transcript could not be anonymised safely, so nothing was sent for review.") from exc
+
+    if mode == "mock":
+        client, model = _MockJudgeClient(pseudo), "mock"
+    else:
+        client, model = _gemini_client(), model_id(tier)
+    say("Scoring the transcript against the rubric", 0.5)
+    res = judge(pseudo, client, model, duration)
+    if not res.ok:
+        raise RuntimeError(f"The transcript judge failed: {res.error}")
+
+    evidence = {}
+    for v in res.votes:
+        evidence.setdefault(v.item, []).extend(v.evidence)
+    statuses = res.features.get("statuses", {})
+    items = {}
+    for i in ITEM_IDS:
+        st = Status(statuses.get(i, Status.NOT_OBSERVABLE.value)) if i != "camera_background" else Status.NOT_OBSERVABLE
+        items[i] = ItemConsensus(status=st, agreement=1.0, evidence=evidence.get(i, []), votes=[st])
+    a = score(Consensus(items=items, camera=CameraObs(), session_type="regular_class", session_agreement=1.0),
+              flags=res.flags, transcript_only=True)
+    stats = [CallStats(input_tokens=res.features.get("input_tokens", 0))] if mode != "mock" else [CallStats()]
+    rep = _report(SimpleNamespace(assessment=a, runs=[], stats=stats), duration, mode, model,
+                  {"b1": res}, time.monotonic() - t0)
+    rep["review_type"] = "transcript"
+    say("Writing the report", 0.95)
+    return rep

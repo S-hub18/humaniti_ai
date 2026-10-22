@@ -38,6 +38,9 @@ recording ─► local ingest (ffprobe, audio, sampled frames)
 - **Transcript judge (B1).** In Gemini mode, the transcript is scored separately (your Zoom `.vtt`, or Gemini
   transcribes the audio in 10-minute chunks). Children are replaced with Kid1, Kid2… locally; a fail-closed check
   blocks scoring if any known name survives. Its verified judgements add one vote per item.
+- **Transcript-only mode.** Upload just a Zoom `.vtt` (no video) for a full review from the transcript. It is
+  pseudonymised, leak-checked and scored by the same scorer. The camera and background item can't be judged from text,
+  so it is left out, and confidence is capped at medium. The report carries a "Transcript-only review" badge.
 - **Demos are detected.** One-to-one trial classes are reported as observations, not graded.
 
 Full design: [`docs/design/system-design.md`](docs/design/system-design.md). Implementation plan:
@@ -62,6 +65,7 @@ Set a key in the environment or in a local `.env` file (git-ignored):
 ```bash
 GEMINI_API_KEY=...            # required for Gemini mode
 CQA_GEMINI_MODEL=...          # optional override; Flash / Flash-Lite models only
+FREE_TIER=1                   # default on: spaces Gemini calls ~65 s apart and waits out rate limits; 0 for paid keys
 ```
 
 Only Gemini **Flash** and **Flash-Lite** models are allowed (default `gemini-3.8-flash`; tier `flash-lite` =
@@ -84,6 +88,7 @@ uv run pytest -q                                  # unit + integration tests (no
 uv run python -m eval.run_eval --observer mock    # harness smoke run (numbers are NOT results)
 uv run python -m eval.run_eval --observer gemini  # real eval (costs API credits)
 uv run python -m eval.run_eval --observer gemini --b1   # + B1 transcript judge, adds a core+b1 ablation row
+uv run python -m eval.run_eval --mode transcript --observer gemini   # transcript-only (.vtt) vs video comparison
 uv run python -m eval.variants --list             # metamorphic / invariance variants
 ```
 
@@ -107,6 +112,7 @@ variant results are supporting evidence only.
   git-ignored and docker-ignored.
 - Uploads are written to a temporary folder and deleted as soon as the review is built. Nothing is stored or
   cached by the app.
+- One Gemini review runs at a time across all users (shared quota). Others wait and are told they're next.
 - Audio and frame checks run locally. In Gemini mode the recording is uploaded to the Gemini API (paid tier)
   and deleted from it after the review. The model is instructed never to name or describe children.
 - Transcript text is never logged.

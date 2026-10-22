@@ -46,3 +46,14 @@ def test_load_dotenv_does_not_override(tmp_path, monkeypatch):
     load_dotenv(env)
     import os
     assert os.environ["FOO_TEST_KEY"] == "abc" and os.environ["BAR_TEST_KEY"] == "keep"
+
+
+def test_free_tier_flag_controls_spacing(monkeypatch):
+    from cqa.config import call_spacing_s, free_tier
+
+    monkeypatch.delenv("FREE_TIER", raising=False)
+    assert free_tier() is True and call_spacing_s() == 65.0
+    monkeypatch.setenv("FREE_TIER", "0")
+    assert free_tier() is False and call_spacing_s() == 2.0
+    monkeypatch.setenv("FREE_TIER", "true")
+    assert free_tier() is True

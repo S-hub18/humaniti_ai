@@ -55,3 +55,16 @@ def load_dotenv(path: Path | str = Path(__file__).resolve().parents[1] / ".env")
             continue
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip().removeprefix("export ").strip(), v.strip().strip("'\""))
+
+
+FREE_TIER_SPACING_S = 65.0  # free tier: ~250k input tokens/min; one focus call is ~170k tokens
+PAID_SPACING_S = 2.0
+
+
+def free_tier() -> bool:
+    """FREE_TIER env flag (default on). Off for paid keys: much shorter spacing between Gemini calls."""
+    return os.environ.get("FREE_TIER", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def call_spacing_s() -> float:
+    return FREE_TIER_SPACING_S if free_tier() else PAID_SPACING_S

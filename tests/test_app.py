@@ -66,3 +66,27 @@ def test_esc_collapses_blank_lines():
     mod.__dict__["__file__"] = APP
     exec(compile(src, APP, "exec"), mod.__dict__)
     assert "\n" not in mod.esc("line one\n\n![x](http://evil/t.png)")
+
+
+def test_uploader_native_size_label_hidden():
+    css = Path(APP).read_text()
+    assert '[data-testid="stFileUploaderDropzoneInstructions"]{ display:none' in css
+
+
+def test_transcript_only_report_shows_badge():
+    from cqa.service import run_transcript_review
+
+    vtt = Path(APP).parent.parent / "tests" / "_tmp_t.vtt"
+    vtt.write_text("WEBVTT\n\n1\n00:00:01.000 --> 00:00:05.000\nTeach Er: Hello everyone, how was your day?\n\n"
+                   "2\n00:00:06.000 --> 00:00:07.000\nSome Kid: Good!\n")
+    try:
+        rep = run_transcript_review(vtt, mode="mock")
+    finally:
+        vtt.unlink()
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.session_state["report"] = rep
+    at.run()
+    assert not at.exception
+    page = " ".join(m.value for m in at.markdown)
+    assert "Transcript-only review" in page
+    assert any(t.label == "Transcript only" for t in at.tabs)

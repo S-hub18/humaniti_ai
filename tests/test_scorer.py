@@ -167,3 +167,10 @@ def test_one_not_met_no_cap_and_cap_never_raises():
     assert one.grade == Grade.EXCELLENT and not any(f.startswith("cap:") for f in one.flags)
     low = score(cons(default=S.NOT_MET, individual_calling=S.MET, rapport_intro=S.PARTIAL))
     assert low.grade == Grade.POOR
+
+
+def test_transcript_only_scoring_caps_confidence_and_ignores_camera_gate():
+    a = score(cons(camera_background=S.NOT_OBSERVABLE, camera=CameraObs()), transcript_only=True)
+    assert a.grade is not None and a.confidence == "medium"
+    assert "transcript_only:no_camera" in a.flags
+    assert not any(f.startswith("compliance:") for f in a.flags)

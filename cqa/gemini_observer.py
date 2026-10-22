@@ -18,7 +18,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from cqa.config import model_id, prices_for
-from cqa.gemini_retry import retry_call, retry_delay
+from cqa.gemini_retry import countdown_sleep, retry_call, retry_delay
 from cqa.evidence import WINDOW_TOLERANCE_S, fmt_ts, parse_ts
 from cqa.media import MediaRef
 from cqa.observer import CallSpec, CallStats
@@ -51,8 +51,12 @@ class GeminiObserver:
         min_call_interval_s: float = 0.0,
         sleep=time.sleep,
         on_retry=None,
+        on_wait=None,
+        on_call=None,
     ) -> None:
         self.on_retry = on_retry
+        self.on_wait = on_wait  # (seconds_remaining, attempt, max_retries, kind) -> live countdown in the UI
+        self.on_call = on_call  # (call name) -> "which step is running" in the UI
         self.proxy_above_bytes = proxy_above_bytes
         self.max_retries = max_retries
         self.min_call_interval_s = min_call_interval_s
@@ -146,13 +150,17 @@ class GeminiObserver:
         return retry_delay(exc, 0)
 
     def _retry(self, fn, what: str):
-        return retry_call(fn, what, max_retries=self.max_retries, sleep=self._sleep, on_retry=self.on_retry)
+        return retry_call(fn, what, max_retries=self.max_retries, sleep=self._sleep, on_retry=self.on_retry,
+                          on_wait=self.on_wait)
 
     def _request_with_retry(self, f, spec: CallSpec, duration: float):
         if self._last_call is not None and self.min_call_interval_s > 0:
             wait = self.min_call_interval_s - (time.monotonic() - self._last_call)
             if wait > 0:
-                self._sleep(wait)
+                if self.on_wait is not None:
+                    countdown_sleep(wait, lambda rem: self.on_wait(rem, 0, 0, "spacing"), self._sleep)
+                else:
+                    self._sleep(wait)
         resp = self._retry(lambda: self._request(f, spec, duration), f"{spec.name} call")
         self._last_call = time.monotonic()
         return resp
@@ -213,6 +221,8 @@ class GeminiObserver:
         if self._session_sha != media.sha256:
             with self.session(media):
                 return self.observe(media, spec, sample_idx)
+        if self.on_call is not None:
+            self.on_call(spec.name)
         if self._file is None:
             self._file, self._file_sha = self._upload(media), media.sha256
         total = CallStats()

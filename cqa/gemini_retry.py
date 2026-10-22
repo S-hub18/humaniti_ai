@@ -9,6 +9,7 @@ Every retry is logged server side; an optional callback lets the UI show "Gemini
 from __future__ import annotations
 
 import logging
+import math
 import random
 import re
 import time
@@ -48,6 +49,19 @@ def retry_delay(exc: Exception, attempt: int, rng: Callable[[], float] = random.
     return None
 
 
+OnWait = Callable[[int, int, int, str], None]  # (seconds_remaining, attempt, max_retries, kind)
+
+
+def countdown_sleep(seconds: float, on_tick: Callable[[int], None], sleep: Callable[[float], None] = time.sleep) -> None:
+    """Sleep `seconds`, calling on_tick(whole seconds remaining) once per second, so the UI can show a live countdown."""
+    rem = float(seconds)
+    while rem > 1e-9:
+        on_tick(math.ceil(rem - 1e-9))
+        step = rem - (math.ceil(rem - 1e-9) - 1)
+        sleep(step)
+        rem -= step
+
+
 def retry_call(
     fn: Callable[[], T],
     what: str,
@@ -55,6 +69,7 @@ def retry_call(
     sleep: Callable[[float], None] = time.sleep,
     on_retry: OnRetry | None = None,
     rng: Callable[[], float] = random.random,
+    on_wait: OnWait | None = None,
 ) -> T:
     for attempt in range(max_retries + 1):
         try:
@@ -69,5 +84,8 @@ def retry_call(
             log.warning("Gemini %s %s (%s); retry %d/%d in %.1f s", what, kind, type(exc).__name__, attempt + 1, max_retries, delay)
             if on_retry is not None:
                 on_retry(attempt + 1, max_retries, kind)
-            sleep(delay)
+            if on_wait is not None:
+                countdown_sleep(delay, lambda rem: on_wait(rem, attempt + 1, max_retries, kind), sleep)
+            else:
+                sleep(delay)
     raise RuntimeError("unreachable")

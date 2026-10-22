@@ -48,7 +48,7 @@ def test_null_items_renormalised():
 def test_coverage_abstain():
     a = score(cons(default=S.NOT_OBSERVABLE, individual_calling=S.MET, rapport_intro=S.MET))
     assert a.grade is None and a.abstain_reason == "insufficient_observations"
-    assert a.score == 100.0
+    assert a.score == pytest.approx(69.0)  # 38 met + 62 unobserved at the neutral prior 0.5
 
 
 def test_no_background_caps_poor():
@@ -112,3 +112,39 @@ def test_confidence_levels():
 def test_custom_cutpoints():
     a = score(cons(homework=S.NOT_MET, closing=S.PARTIAL), ScoringConfig(cutpoints=(50.0, 68.0, 80.0)))
     assert a.grade == Grade.EXCELLENT
+
+
+# ---- flow-review fix 3: dropped / unobserved items must not raise the score ----
+def test_unobserved_items_score_at_neutral_prior_not_vanish():
+    from cqa.scorer import NEUTRAL_PRIOR
+
+    assert NEUTRAL_PRIOR == 0.5
+    # a partial item that becomes not_observable must not raise the score
+    with_partial = score(cons(rapport_intro=S.PARTIAL, homework=S.NOT_MET))
+    dropped = score(cons(rapport_intro=S.NOT_OBSERVABLE, homework=S.NOT_MET))
+    assert dropped.score <= with_partial.score
+    assert dropped.coverage < with_partial.coverage
+
+
+def test_dropping_a_met_claim_lowers_the_score():
+    assert score(cons(homework=S.NOT_OBSERVABLE)).score < score(cons()).score
+
+
+def test_min_graded_items_abstains():
+    from cqa.scorer import MIN_GRADED_ITEMS
+
+    assert MIN_GRADED_ITEMS == 5
+    four = cons(default=S.NOT_OBSERVABLE, individual_calling=S.MET, rapport_intro=S.MET,
+                energy_warmth=S.MET, camera_background=S.MET)  # 70/100 coverage but only 4 items
+    a = score(four)
+    assert a.grade is None and a.abstain_reason == "insufficient_observations"
+    five = cons(default=S.NOT_OBSERVABLE, individual_calling=S.MET, rapport_intro=S.MET,
+                energy_warmth=S.MET, camera_background=S.MET, homework=S.MET)
+    assert score(five).grade is not None
+
+
+def test_not_applicable_only_counts_for_new_joiners():
+    na_new = score(cons(new_joiner_intro=S.NOT_APPLICABLE))
+    na_homework = score(cons(homework=S.NOT_APPLICABLE))
+    assert na_new.score == 100.0
+    assert na_homework.score < 100.0  # treated as unobserved (neutral prior), not removed

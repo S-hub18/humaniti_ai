@@ -45,8 +45,8 @@ def test_merge_opening_null_falls_back_to_main():
     assert merge_calls(main, opening, None).items["rapport_intro"].status == S.PARTIAL
 
 
-def test_merge_homework_most_positive_with_evidence():
-    main = full_main(homework=io(S.NOT_MET))
+def test_merge_homework_agreeing_calls_and_closing_override():
+    main = full_main(homework=io(S.MET))
     closing = out("closing", {"homework": io(S.MET, "50:00"), "closing": io(S.PARTIAL)})
     m = merge_calls(main, None, closing)
     assert m.items["homework"].status == S.MET
@@ -111,3 +111,27 @@ def test_evidence_deduplicated_within_10s():
     b.items["homework"] = io(S.MET, "01:05")
     c = vote([a, b])
     assert len(c.items["homework"].evidence) == 1
+
+
+# ---- flow-review fix 5: stricter call merge ----
+def test_focus_not_applicable_cannot_override_main_not_met():
+    main = full_main(new_joiner_intro=io(S.NOT_MET), closing=io(S.NOT_MET))
+    opening = out("opening", {"new_joiner_intro": io(S.NOT_APPLICABLE)})
+    closing = out("closing", {"closing": io(S.NOT_APPLICABLE)})
+    m = merge_calls(main, opening, closing)
+    assert m.items["new_joiner_intro"].status == S.NOT_MET
+    assert m.items["closing"].status == S.NOT_MET
+
+
+def test_focus_not_applicable_still_used_when_main_not_negative():
+    main = full_main(new_joiner_intro=io(S.NOT_OBSERVABLE))
+    opening = out("opening", {"new_joiner_intro": io(S.NOT_APPLICABLE)})
+    assert merge_calls(main, opening, None).items["new_joiner_intro"].status == S.NOT_APPLICABLE
+
+
+def test_homework_needs_majority_tie_goes_conservative():
+    main = full_main(homework=io(S.NOT_MET))
+    closing = out("closing", {"homework": io(S.MET, "50:00")})
+    assert merge_calls(main, None, closing).items["homework"].status == S.NOT_MET  # 1-1 tie -> stricter
+    opening = out("opening", {"homework": io(S.MET, "05:00")})
+    assert merge_calls(main, opening, closing).items["homework"].status == S.MET  # 2-1 majority

@@ -87,12 +87,18 @@ def merge_calls(
 
     for item_id, focus in (("rapport_intro", opening), ("new_joiner_intro", opening), ("closing", closing)):
         o = get(focus, item_id)
-        if _answered(o):
-            items[item_id] = o
+        if not _answered(o):
+            continue
+        if o.status == Status.NOT_APPLICABLE and items[item_id].status == Status.NOT_MET:
+            continue  # a focus window's "not applicable" cannot erase a main-call "not met"
+        items[item_id] = o
 
     hw = [c.items["homework"] for c in calls if _valued(c.items.get("homework"))]
-    if hw:
-        items["homework"] = max(hw, key=lambda o: ORDINAL[o.status])
+    if hw:  # majority across calls; ties go to the stricter (lower) status
+        counts = Counter(o.status for o in hw)
+        top = max(counts.values())
+        winner = min((st for st, n in counts.items() if n == top), key=lambda st: ORDINAL[st])
+        items["homework"] = next(o for o in hw if o.status == winner)
 
     cam_items = [c.items["camera_background"] for c in calls if _valued(c.items.get("camera_background"))]
     if cam_items:

@@ -7,6 +7,17 @@ from cqa.scorer import Assessment
 
 MAX_EVIDENCE_PER_ITEM = 2
 
+# Specific absences for not_met items (said plainly, instead of rubric template text).
+ABSENCE = {
+    "individual_calling": "Missing: children were rarely called on individually by name; questions went to the whole group.",
+    "rapport_intro": "Missing: the class started without individual greetings or small talk before the lesson.",
+    "energy_warmth": "Missing: delivery stayed flat, with little praise or encouragement for the children.",
+    "camera_background": "Missing: the teacher's camera, face or branded 8x8 background was absent for much of the class.",
+    "homework": "Missing: no homework or practice was given at any point in the class.",
+    "closing": "Missing: the class ended without a recap or a proper goodbye.",
+    "new_joiner_intro": "Missing: a new child joined but was not given time to introduce themselves.",
+}
+
 FLAG_TEXT = {
     "compliance:no_branded_background": "Compliance: the 8x8 branded background was not used (grade capped at Poor).",
     "compliance:face_not_visible": "Compliance: the teacher's face was rarely visible (grade capped at Poor).",
@@ -41,12 +52,14 @@ def build_explanation(a: Assessment) -> dict:
             continue
         target = strengths if ic.status == Status.MET else improvements
         label = item.title if ic.status == Status.MET else f"{item.title} ({ic.status.value.replace('_', ' ')})"
+        if ic.status == Status.NOT_MET:
+            target.append(ABSENCE[item.id])
         if ic.evidence:
             for ev in ic.evidence[:MAX_EVIDENCE_PER_ITEM]:
                 quote = f' "{ev.quote}"' if ev.quote else ""
                 target.append(f"[{ev.t_start}] {label}: {ev.observation}{quote}")
-        else:
-            target.append(f"Not observed: {label}: {item.anchors.get(ic.status.value, item.description)}")
+        elif ic.status != Status.NOT_MET:
+            target.append(f"Missing: {label}: no supporting moment was found in the recording.")
     return {
         "headline": _headline(a),
         "strengths": strengths,

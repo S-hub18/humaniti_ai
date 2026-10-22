@@ -59,7 +59,7 @@ def test_every_bullet_has_timestamp_or_not_observed():
     a = assess(MEDIA, MockObserver(oracle=oracle), PipelineConfig()).assessment
     ex = build_explanation(a)
     bullets = ex["strengths"] + ex["improvements"]
-    assert bullets and all(b.startswith("[") or b.startswith("Not observed:") for b in bullets)
+    assert bullets and all(b.startswith("[") or b.startswith("Missing:") for b in bullets)
     assert not any("New joiners" in b for b in bullets)  # N/A item produces no bullet
     assert ex["headline"].startswith("Good") or ex["headline"].startswith("Excellent")
 
@@ -68,3 +68,17 @@ def test_demo_headline():
     obs = MockObserver(oracle={i: Status.MET for i in ITEM_IDS}, session_type="demo_trial")
     ex = build_explanation(assess(MEDIA, obs, PipelineConfig()).assessment)
     assert "demo" in ex["headline"].lower() and "not graded" in ex["headline"].lower()
+
+
+# ---- flow-review fix 6: specific absences, not rubric template text ----
+def test_not_met_states_the_specific_absence():
+    from cqa.explain import ABSENCE
+
+    oracle = {i: Status.MET for i in ITEM_IDS}
+    oracle.update(homework=Status.NOT_MET, closing=Status.NOT_MET)
+    ex = build_explanation(assess(MEDIA, MockObserver(oracle=oracle), PipelineConfig()).assessment)
+    assert ABSENCE["homework"] in ex["improvements"]
+    assert "no homework" in ABSENCE["homework"].lower() and "at any point" in ABSENCE["homework"]
+    assert ABSENCE["closing"] in ex["improvements"]
+    assert set(ABSENCE) == set(ITEM_IDS)
+    assert not any(b.startswith("Not observed:") for b in ex["improvements"])

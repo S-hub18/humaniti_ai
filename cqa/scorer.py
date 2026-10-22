@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from cqa.aggregate import CAMERA_ORDER, Consensus, ItemConsensus, conservative
-from cqa.rubric import DEFAULT_CUTPOINTS, STATUS_VALUE, WEIGHTS, Grade
+from cqa.rubric import DEFAULT_CUTPOINTS, STATUS_VALUE, WEIGHTS, Grade, Status
 from cqa.schema import CameraObs
 
 MIN_GATE_FRAMES = 8
@@ -15,6 +15,14 @@ NEAR_CUTPOINT = 4.0
 HIGH_AGREEMENT = 0.9
 LOW_AGREEMENT = 0.7
 MIN_SESSION_AGREEMENT = 2 / 3
+# An item with no usable evidence (not observed, or its claim dropped by validation) is scored at a neutral
+# prior instead of vanishing from the average: dropping a partial cannot raise the score, dropping a met lowers it.
+NEUTRAL_PRIOR = 0.5
+# Grading needs at least 5 of the 7 checklist items actually observed. With 7 items, 5 guarantees most of the
+# rubric is evidenced: at most two items may be unknown (e.g. new joiners not applicable + one unobservable), and
+# no single item (max weight 20) can swing the grade by more than one band on its own.
+MIN_GRADED_ITEMS = 5
+NA_ALLOWED = {"new_joiner_intro"}  # only item the rubric allows to be "not applicable"
 
 CameraField = Literal["branded_background", "face_visible", "camera_on_while_teaching", "lighting"]
 
@@ -55,19 +63,27 @@ def grade_from_score(score: float, cutpoints: tuple[float, float, float]) -> Gra
     return Grade.POOR
 
 
-def _weighted(items: dict[str, ItemConsensus], weights: dict[str, int]) -> tuple[float | None, float]:
+def _weighted(items: dict[str, ItemConsensus], weights: dict[str, int]) -> tuple[float | None, float, int]:
+    """(score, coverage, n_graded). Unobserved items count at NEUTRAL_PRIOR; only new_joiner N/A is excluded."""
     total_w = sum(weights.values())
-    num = den = 0.0
+    num = den = observed_w = 0.0
+    n_graded = 0
     for item_id, w in weights.items():
         ic = items.get(item_id)
-        v = STATUS_VALUE[ic.status] if ic else None
-        if v is None:
+        status = ic.status if ic else None
+        if status == Status.NOT_APPLICABLE and item_id in NA_ALLOWED:
             continue
+        v = STATUS_VALUE[status] if status is not None else None
+        if v is None:
+            v = NEUTRAL_PRIOR
+        else:
+            observed_w += w
+            n_graded += 1
         num += w * v
         den += w
-    if den == 0:
-        return None, 0.0
-    return round(100.0 * num / den, 4), den / total_w
+    if n_graded == 0 or den == 0:
+        return None, 0.0, 0
+    return round(100.0 * num / den, 4), observed_w / total_w, n_graded
 
 
 def _apply_gate_signals(camera: CameraObs, gates: list[GateSignal], flags: list[str]) -> CameraObs:
@@ -104,7 +120,7 @@ def score(
     cfg = cfg or ScoringConfig()
     flags = list(flags or [])
     camera = _apply_gate_signals(c.camera, gates or [], flags)
-    value, coverage = _weighted(c.items, cfg.weights)
+    value, coverage, n_graded = _weighted(c.items, cfg.weights)
 
     grade: Grade | None = None
     abstain: str | None = None
@@ -116,7 +132,7 @@ def score(
         session = "demo"
     elif session in ("not_a_class", "unknown"):
         abstain = "not_a_class"
-    elif value is None or coverage < cfg.coverage_min:
+    elif value is None or coverage < cfg.coverage_min or n_graded < MIN_GRADED_ITEMS:
         abstain = "insufficient_observations"
     else:
         grade = grade_from_score(value, cfg.cutpoints)

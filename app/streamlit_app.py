@@ -23,6 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cqa.config import MODELS, free_tier, load_dotenv  # noqa: E402
 from cqa.service import GATE, InputError, fetch_input, run_assessment, run_transcript_review  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from theme import CSS, GRADE_PIECE, TOKENS, page_link, theme_css  # noqa: E402,F401
+
 log = logging.getLogger("cqa.app")
 
 
@@ -35,97 +38,6 @@ STATUS_TEXT = {"met": "Met", "partial": "Partly met", "not_met": "Not met",
                "not_applicable": "Not applicable", "not_observable": "Not observed"}
 STATUS_ORDER = {"not_met": 0, "partial": 1, "met": 2, "not_observable": 3, "not_applicable": 4}
 WARN_PREFIXES = ("compliance", "cap")
-
-# One palette, forced (see .streamlit/config.toml): the 8x8 chess light theme. No OS dark-mode switching -- that
-# was the original white-text-on-cream bug. All text/background pairs meet WCAG AA (>= 4.5:1; tested).
-TOKENS = {
-    "light": {
-        "page": "#F7F6EE", "surface": "#FFFFFF", "ink": "#14212A", "muted": "#44535B", "line": "#D8D6C6",
-        "met": "#2E5E3E", "partial": "#8A5A00", "notmet": "#A3263F", "na": "#5B6770", "chip-ink": "#FFFFFF",
-        "poor": "#A3263F", "average": "#8A5A00", "good": "#2F5D8A", "excellent": "#2E5E3E",
-        "warn-bg": "#FBEAEC", "info-bg": "#EEF1E8", "mock-bg": "#FFF4D8",
-        "board-light": "#EEEED2", "board-dark": "#7A9A5E",
-    },
-}
-GRADE_PIECE = {"Poor": "\u265f", "Average": "\u265e", "Good": "\u265c", "Excellent": "\u265b"}  # pawn, knight, rook, queen
-
-CSS = """
-<style>
-:root{ %(vars)s }
-html, body, [class*="css"], .stMarkdown, p, li, label{
-  font-family:'Atkinson Hyperlegible','Avenir Next','Segoe UI',system-ui,sans-serif; }
-.cq-display, .cq-h1, .cq-grade, .cq-section{
-  font-family:'Avenir Next Condensed','Arial Narrow','Avenir Next','Segoe UI',system-ui,sans-serif; letter-spacing:-0.01em; }
-.block-container{ max-width:1040px; padding-top:2rem; }
-/* Streamlit fades stale elements during a rerun; keep everything crisp while a review runs */
-[data-stale="true"]{ opacity:1 !important; filter:none !important; transition:none !important; }
-[data-testid="stProgress"] p{ color:var(--ink) !important; font-weight:700; font-size:1.02rem; }
-[data-testid="stFileUploaderDropzoneInstructions"]{ display:none !important; }
-.cq-h1{ font-size:2.9rem; font-weight:900; line-height:1.02; letter-spacing:-0.02em; color:var(--ink); margin:0 0 .5rem 0; }
-.cq-board{ height:12px; width:192px; border-radius:2px; margin:0 0 1.2rem 0;
-  background:repeating-conic-gradient(var(--board-dark) 0 25%%, var(--board-light) 0 50%%) 0 0/12px 12px; }
-.cq-sub{ color:var(--muted); font-size:1.08rem; line-height:1.5; max-width:62ch; margin:0 0 1.4rem 0; }
-.cq-section{ font-size:1.25rem; font-weight:800; color:var(--ink); margin:1.8rem 0 .5rem 0; }
-.cq-hero{ position:relative; overflow:hidden; display:grid; grid-template-columns:auto 1fr; align-items:center; gap:1rem 2rem; padding:1.2rem 1.4rem; margin:.4rem 0 .6rem 0;
-  background:var(--surface); border:1px solid var(--line); border-left:10px solid var(--g); border-radius:6px; }
-.cq-hero::after{ content:""; position:absolute; left:10px; bottom:0; width:72px; height:48px; opacity:.18; pointer-events:none;
-  background:repeating-conic-gradient(var(--board-dark) 0 25%%, transparent 0 50%%) 0 0/24px 24px; }
-.cq-grade{ font-size:3.6rem; font-weight:900; line-height:1; color:var(--g); }
-.cq-piece{ font-size:3.4rem; line-height:1; color:var(--g); }
-.cq-meta{ display:flex; flex-direction:column; gap:.35rem; }
-.cq-score{ font-size:1.25rem; font-weight:700; color:var(--ink); }
-.cq-conf{ align-self:flex-start; padding:.15rem .65rem; border-radius:999px; border:2px solid var(--ink); color:var(--ink); font-weight:700; font-size:.9rem; }
-.cq-conf.low{ border-color:var(--notmet); color:var(--notmet); }
-.cq-left{ display:flex; align-items:center; gap:1.4rem; flex-wrap:wrap; }
-.cq-right{ justify-self:end; min-width:240px; }
-.cq-counts{ color:var(--ink); font-size:.95rem; margin-bottom:.45rem; }
-.cq-counts b{ font-size:1.05rem; }
-.cq-mini{ display:grid; grid-template-columns:1fr auto; gap:.18rem .6rem; font-size:.82rem; color:var(--muted); }
-.cq-mini .bar{ height:10px; border-radius:2px; background:var(--s); align-self:center; }
-.cq-mini .bar.half{ background:linear-gradient(90deg,var(--s) 50%%, var(--line) 50%%); }
-.cq-mini .bar.none{ background:var(--line); }
-.cq-rank{ display:grid; grid-template-columns:repeat(4,1fr); max-width:520px; margin:.3rem 0 1rem 0; cursor:default; user-select:none; }
-.cq-sq{ font-size:.8rem; color:var(--muted); text-align:center; padding-top:.35rem; border-top:6px solid var(--line); }
-.cq-sq.on{ border-top-color:var(--g); color:var(--ink); font-weight:800; }
-@media (max-width:760px){ .cq-hero{ grid-template-columns:1fr; } .cq-right{ justify-self:start; } }
-.cq-flag{ display:flex; gap:.7rem; align-items:flex-start; padding:.7rem .9rem; margin:.4rem 0; border-radius:6px;
-  color:var(--ink); background:var(--info-bg); border-left:6px solid var(--good); font-size:1rem; line-height:1.45; }
-.cq-flag.warn{ background:var(--warn-bg); border-left-color:var(--notmet); }
-.cq-flag .ic{ font-weight:800; font-size:1.1rem; line-height:1.2; }
-.cq-flag.warn .ic{ color:var(--notmet); } .cq-flag .ic{ color:var(--good); }
-.cq-flag .sev{ font-weight:800; margin-right:.3rem; }
-.cq-badge{ display:inline-block; margin:0 0 .8rem 0; padding:.25rem .75rem; border:2px solid var(--ink); border-radius:4px; font-weight:800; color:var(--ink); }
-.cq-mock{ border:2px dashed var(--partial); background:var(--mock-bg); padding:.7rem .9rem; margin:0 0 1rem 0; color:var(--ink); border-radius:6px; }
-.cq-card{ background:var(--surface); border:1px solid var(--line); border-left:6px solid var(--s); border-radius:6px; padding:.85rem 1rem; margin:.55rem 0; }
-.cq-card-head{ display:flex; justify-content:space-between; align-items:baseline; gap:1rem; }
-.cq-card-title{ font-weight:800; font-size:1.08rem; color:var(--ink); }
-.cq-weight{ color:var(--muted); font-size:.88rem; margin-left:.4rem; font-weight:400; }
-.cq-chip{ font-weight:800; font-size:.85rem; padding:.18rem .6rem; border-radius:4px; color:var(--chip-ink); background:var(--s); white-space:nowrap; }
-.cq-ev{ margin:.45rem 0 0 0; padding:0; list-style:none; }
-.cq-ev li{ margin:.3rem 0; color:var(--ink); line-height:1.45; }
-.cq-ts{ font-variant-numeric:tabular-nums; font-weight:800; margin-right:.5rem; }
-.cq-quote{ color:var(--muted); font-style:italic; }
-.cq-agree{ color:var(--muted); font-size:.82rem; margin-top:.3rem; }
-.cq-absent{ margin:.45rem 0 0 0; color:var(--ink); font-weight:700; }
-.cq-legend{ display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; color:var(--ink); font-size:.92rem; margin:.3rem 0 0 0; }
-.cq-legend i{ display:inline-block; width:12px; height:12px; margin-right:.35rem; vertical-align:-1px; border-radius:2px; }
-.cq-foot{ color:var(--muted); font-size:.9rem; border-top:1px solid var(--line); margin-top:1.6rem; padding-top:.8rem; }
-.cq-help{ color:var(--muted); font-size:.92rem; line-height:1.45; }
-.cq-empty{ background:transparent; border:1px dashed var(--line); border-radius:6px; padding:.9rem 1.1rem; color:var(--muted); }
-.cq-empty b{ color:var(--ink); }
-[data-testid="stBaseButton-primary"]:disabled{ background:var(--met) !important; border-color:var(--met) !important;
-  color:var(--chip-ink) !important; opacity:.45; }
-.cq-empty ul{ margin:.4rem 0 0 1.1rem; } .cq-empty li{ margin:.2rem 0; }
-@media (max-width:640px){ .cq-h1{font-size:1.9rem;} .cq-grade{font-size:2.6rem;} }
-@media (prefers-reduced-motion: no-preference){ .cq-hero{ animation:cq-in .35s ease-out 1; } }
-@keyframes cq-in{ from{ transform:translateY(6px); opacity:0;} to{ transform:none; opacity:1;} }
-</style>
-"""
-
-
-def theme_css() -> str:
-    return CSS % {"vars": " ".join(f"--{k}:{v};" for k, v in TOKENS["light"].items())}
-
 
 def esc(s) -> str:
     """HTML-escape and collapse whitespace: a blank line would end Streamlit's HTML block and let the rest of
@@ -266,16 +178,13 @@ def render_report(rep: dict) -> None:
         f'{rep["output_tokens"]:,} out, ${rep["cost_usd"]:.3f}, {rep["latency_s"]:.0f} s.</div>', unsafe_allow_html=True)
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    st.set_page_config(page_title="Class review", page_icon="♞", layout="wide")
-    st.markdown(theme_css(), unsafe_allow_html=True)
+def sidebar() -> dict:
+    """Shared sidebar (drawn by the entry script on every page): settings persist across pages via widget keys."""
     load_dotenv()
     has_key = bool(os.environ.get("GEMINI_API_KEY"))
-
     with st.sidebar:
         st.markdown("### Review engine")
-        mode = st.radio("Who reviews the class", ["Mock (no API cost)", "Gemini"], index=0,
+        mode = st.radio("Who reviews the class", ["Mock (no API cost)", "Gemini"], index=0, key="cfg_mode",
                         help="Mock runs the whole app with a built-in demo observer.")
         st.markdown('<p class="cq-help"><b>Mock</b> shows how the review looks, using made-up observations. It is free '
                     'and instant, but the grade is not real.<br><b>Gemini</b> watches and listens to the actual class and '
@@ -283,41 +192,56 @@ def main() -> None:
         if mode == "Gemini" and not has_key:
             st.warning("Gemini needs GEMINI_API_KEY on the server. Using Mock instead.")
             mode = "Mock (no API cost)"
-        tier = st.selectbox("Gemini model", list(MODELS), format_func=lambda t: f"{t} ({MODELS[t]})",
+        tier = st.selectbox("Gemini model", list(MODELS), key="cfg_tier", format_func=lambda t: f"{t} ({MODELS[t]})",
                             disabled=not mode.startswith("Gemini"))
         if mode == "Gemini" and free_tier():
             st.markdown('<p class="cq-help">This key is on the <b>free tier</b>: the app paces its calls and waits '
                         'out rate limits, so a one-hour class takes about 10 to 15 minutes.</p>', unsafe_allow_html=True)
         st.markdown("### Extra checks")
-        b1 = st.checkbox("Transcript judge (Gemini only)", value=True, disabled=not mode.startswith("Gemini"),
+        b1 = st.checkbox("Transcript judge (Gemini only)", value=True, key="cfg_b1", disabled=not mode.startswith("Gemini"),
                          help="Scores the transcript separately (your .vtt, or Gemini transcribes the audio). "
                               "Children's names are replaced with Kid1, Kid2… before scoring.")
-        b2 = st.checkbox("Audio delivery check (runs locally)", value=True)
-        xc = st.checkbox("Camera and background check (runs locally)", value=True)
+        b2 = st.checkbox("Audio delivery check (runs locally)", value=True, key="cfg_b2")
+        xc = st.checkbox("Camera and background check (runs locally)", value=True, key="cfg_xc")
         st.markdown("### Privacy")
         st.markdown('<p class="cq-help">Files are processed in a temporary folder and deleted as soon as the review is '
                     'built. Nothing is stored. In Gemini mode the recording goes to Google Gemini and is deleted there '
                     'after the review.</p>', unsafe_allow_html=True)
 
+    return {"mode": mode, "tier": tier, "b1": b1, "b2": b2, "xc": xc}
+
+
+def review_page() -> None:
+    cfg = st.session_state["cfg"]
+    mode, tier, b1, b2, xc = cfg["mode"], cfg["tier"], cfg["b1"], cfg["b2"], cfg["xc"]
     st.markdown('<h1 class="cq-h1">Review a recorded chess class</h1>'
                 '<p class="cq-sub">Add a class recording, a link to one, or just its Zoom transcript. You get a grade from '
                 'Poor to Excellent, with timestamped evidence for each part of the 8x8 teaching rubric.</p>'
+                '<ul class="cq-points"><li>Built from the academy reviewers\' own feedback</li>'
+                '<li>Every judgement points to a moment in the class</li>'
+                '<li>The AI observes; fixed rules decide the grade</li></ul>'
                 '<div class="cq-board" aria-hidden="true"></div>',
                 unsafe_allow_html=True)
+    st.page_link(st.session_state["_pages"]["how"], label="How it works →")
 
-    src_tab, link_tab, tx_tab = st.tabs(["Upload a recording", "Paste a link", "Transcript only"])
-    with src_tab:
+    source = st.radio("Add the class by", ["Upload a recording", "Paste a link", "Transcript only"], horizontal=True,
+                      key="source")
+    upload = link = vtt_only = vtt = None
+    if source == "Upload a recording":
         upload = st.file_uploader("Class recording", type=["mp4", "mov", "mkv", "webm"], max_upload_size=600,
-                                  help="MP4, MOV, MKV or WEBM, up to 600 MB.")
+                                  key="up_video", help="MP4, MOV, MKV or WEBM, up to 600 MB.")
         st.caption("MP4, MOV, MKV or WEBM, up to 600 MB.")
-    with link_tab:
-        link = st.text_input("Google Drive share link or direct video link", placeholder="https://drive.google.com/file/d/...")
-    with tx_tab:
-        vtt_only = st.file_uploader("Zoom transcript (.vtt)", type=["vtt"], max_upload_size=5, key="vtt_only",
+        vtt = st.file_uploader("Zoom transcript (.vtt, optional)", type=["vtt"], max_upload_size=5, key="up_vtt",
+                               help="If you have the Zoom transcript, add it. It improves quote checking.")
+    elif source == "Paste a link":
+        link = st.text_input("Google Drive share link or direct video link", key="link_url",
+                             placeholder="https://drive.google.com/file/d/...")
+        vtt = st.file_uploader("Zoom transcript (.vtt, optional)", type=["vtt"], max_upload_size=5, key="link_vtt",
+                               help="If you have the Zoom transcript, add it. It improves quote checking.")
+    else:
+        vtt_only = st.file_uploader("Zoom transcript (.vtt)", type=["vtt"], max_upload_size=5, key="tx_vtt",
                                     help="No video needed. The camera and background item can't be judged from text.")
         st.caption("Review from the transcript alone. Children's names are replaced with Kid1, Kid2… before scoring.")
-    vtt = st.file_uploader("Zoom transcript for a recording (.vtt, optional)", type=["vtt"], max_upload_size=5,
-                           help="If you have the Zoom transcript, add it. It improves quote checking.")
 
     c1, c2 = st.columns([1, 2])
     go = c1.button("Review this class", type="primary", disabled=not (upload or link or vtt_only))
@@ -342,7 +266,7 @@ def main() -> None:
             with GATE.slot(on_wait=lambda s: bar.progress(0.0, text=f"Another review is running. You're next (waiting {s:.0f}s).")) \
                     if engine == "gemini" else nullcontext(), tempfile.TemporaryDirectory(prefix="cqa_upload_") as tmp:
                 tmpd = Path(tmp)
-                if upload is None and not link and vtt_only is not None:
+                if source == "Transcript only":
                     tx = tmpd / "transcript.vtt"
                     tx.write_bytes(vtt_only.getbuffer())
                     st.session_state["report"] = run_transcript_review(tx, mode=engine, tier=tier, progress=progress)
@@ -390,6 +314,20 @@ def main() -> None:
                     '<li>Transcript only: just the Zoom .vtt. Camera and background are not scored.</li></ul>'
                     '<p class="cq-help">Not sure yet? Run a sample review to see what a report looks like.</p></div>',
                     unsafe_allow_html=True)
+
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    st.set_page_config(page_title="Class review", page_icon="\u265e", layout="wide")
+    st.markdown(theme_css(), unsafe_allow_html=True)
+    review = st.Page(review_page, title="Review a class", icon=":material/rate_review:", default=True)
+    how = st.Page(str(Path(__file__).resolve().parent / "pages" / "how_it_works.py"), title="How it works",
+                  icon=":material/info:", url_path="how_it_works")
+    st.session_state["_pages"] = {"review": review, "how": how}
+    nav = st.navigation([review, how], position="sidebar")
+    st.session_state["cfg"] = sidebar()
+    nav.run()
 
 
 main()

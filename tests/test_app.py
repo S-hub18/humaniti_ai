@@ -14,7 +14,7 @@ def test_app_renders_in_mock_mode(monkeypatch):
     at = st_testing.AppTest.from_file(APP, default_timeout=30)
     at.run()
     assert not at.exception
-    assert at.radio[0].value.startswith("Mock")
+    assert at.radio(key="cfg_mode").value.startswith("Mock")
     assert at.button[0].disabled  # nothing uploaded yet
 
 
@@ -69,7 +69,7 @@ def test_esc_collapses_blank_lines():
 
 
 def test_uploader_native_size_label_hidden():
-    css = Path(APP).read_text()
+    css = (Path(APP).parent / "theme.py").read_text()
     assert '[data-testid="stFileUploaderDropzoneInstructions"]{ display:none' in css
 
 
@@ -89,7 +89,7 @@ def test_transcript_only_report_shows_badge():
     assert not at.exception
     page = " ".join(m.value for m in at.markdown)
     assert "Transcript-only review" in page
-    assert any(t.label == "Transcript only" for t in at.tabs)
+    assert "Transcript only" in at.radio(key="source").options
 
 
 def _lum(hexc):
@@ -122,6 +122,48 @@ def test_single_forced_chess_light_theme():
 
     cfg = tomllib.loads((Path(APP).parents[1] / ".streamlit" / "config.toml").read_text())
     assert cfg["theme"]["base"] == "light" and "light" not in cfg["theme"] and "dark" not in cfg["theme"]
-    src = Path(APP).read_text()
+    src = Path(APP).read_text() + (Path(APP).parent / "theme.py").read_text()
     assert "prefers-color-scheme" not in src  # no OS-driven colour switching (the original white-on-cream bug)
     assert cfg["theme"]["textColor"].upper() == "#14212A" and cfg["theme"]["backgroundColor"].upper() == "#F7F6EE"
+
+
+def test_how_it_works_page_renders():
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    at.switch_page("pages/how_it_works.py").run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    for heading in ("How it works", "Why it is built this way", "What we tried and dropped", "How it is evaluated",
+                    "Privacy and limits", "Links"):
+        assert heading in text
+    assert "15/21" in text and "51%" in text and "91%" in text
+    assert len(at.get("graphviz_chart")) == 1
+
+
+def test_main_page_links_to_how_it_works():
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    assert not at.exception
+    assert "Every judgement points to a moment in the class" in " ".join(m.value for m in at.markdown)
+
+
+def test_sidebar_settings_persist_across_pages():
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    next(c for c in at.checkbox if c.label.startswith("Audio delivery")).uncheck().run()
+    at.switch_page("pages/how_it_works.py").run()
+    assert not at.exception
+    assert at.session_state["cfg"]["b2"] is False  # same sidebar settings carried to the other page
+    assert at.session_state["cfg"]["b2"] is False
+
+
+def test_each_input_choice_shows_exactly_its_own_uploaders():
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    labels = lambda: [u.label for u in at.get("file_uploader")]  # noqa: E731
+    assert labels() == ["Class recording", "Zoom transcript (.vtt, optional)"]
+    at.radio(key="source").set_value("Paste a link").run()
+    assert labels() == ["Zoom transcript (.vtt, optional)"] and len(at.text_input) == 1
+    at.radio(key="source").set_value("Transcript only").run()
+    assert labels() == ["Zoom transcript (.vtt)"]  # exactly one uploader on the transcript choice
+    assert not at.exception

@@ -129,7 +129,7 @@ def fetch_input(
     return path
 
 
-def _observer(mode: str, tier: str):
+def _observer(mode: str, tier: str, on_retry=None):
     if mode == "mock":
         return MockObserver(oracle=MOCK_ORACLE, noise=0.1, seed=7), "mock"
     load_dotenv()
@@ -142,7 +142,7 @@ def _observer(mode: str, tier: str):
     # No CachedObserver here: the app must not persist observations about a class (cache is eval-only).
     model = model_id(tier)
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 600_000})  # ms; no hung calls
-    return GeminiObserver(client, model=model), model
+    return GeminiObserver(client, model=model, on_retry=on_retry), model
 
 
 def _run_b1(media, vtt_path, mode: str, observer) -> ModuleResult:
@@ -213,7 +213,11 @@ def run_assessment(
                 results["xc"] = ModuleResult(module="xc", ok=False, error=type(exc).__name__)
 
         say("Observing the class against the rubric", 0.55)
-        observer, model = _observer(mode, tier)
+        def busy(attempt: int, max_retries: int, kind: str) -> None:
+            what = "busy" if kind == "server" else "rate-limiting us"
+            say(f"Gemini is {what}, retrying… (attempt {attempt}/{max_retries})", 0.55)
+
+        observer, model = _observer(mode, tier, on_retry=busy)
         if modules.get("b1"):
             say("Scoring the transcript (B1)", 0.45)
             results["b1"] = _run_b1(media, vtt_path, mode, observer)

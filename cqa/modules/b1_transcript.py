@@ -18,7 +18,7 @@ from pathlib import Path
 
 from cqa.aggregate import ModuleVote
 from cqa.evidence import fmt_ts, parse_ts, validate
-from cqa.gemini_observer import GeminiObserver
+from cqa.gemini_retry import retry_call
 from cqa.modules import ModuleResult
 from cqa.rubric import ITEM_BY_ID, Status
 from cqa.schema import ItemObservation, ObserverOutput, TranscriptTurn
@@ -145,15 +145,9 @@ _TRANSCRIBE_PROMPT = (
 )
 
 
-def _call(client, model: str, contents, config, sleep, max_retries: int = 4):
-    for attempt in range(max_retries + 1):
-        try:
-            return client.models.generate_content(model=model, contents=contents, config=config)
-        except Exception as exc:
-            delay = GeminiObserver._retry_delay(exc)
-            if delay is None or attempt == max_retries:
-                raise
-            sleep(min(delay + 2.0, 120.0) * (1 + attempt * 0.5))
+def _call(client, model: str, contents, config, sleep, on_retry=None):
+    return retry_call(lambda: client.models.generate_content(model=model, contents=contents, config=config),
+                      "B1 call", sleep=sleep, on_retry=on_retry)
 
 
 def _config(schema: dict):
@@ -169,7 +163,8 @@ def _wait_active(client, f, sleep, max_wait_s: float = 600.0):
             raise RuntimeError("Gemini audio processing timed out")
         sleep(2.0)
         waited += 2.0
-        f = client.files.get(name=f.name)
+        name = f.name
+        f = retry_call(lambda: client.files.get(name=name), "B1 file status", sleep=sleep)
     if f.state.name != "ACTIVE":
         raise RuntimeError(f"Gemini audio processing failed: {f.state.name}")
     return f
@@ -188,7 +183,8 @@ def transcribe_audio(media_path, client, model: str, duration: float, chunk_s: f
             local = tmp / f"chunk{i:03d}.m4a"
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{s}", "-t", f"{e - s}", "-i", str(media_path), "-vn",
                             "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "32k", str(local)], check=True)
-            remote = client.files.upload(file=str(local), config={"mime_type": "audio/mp4"})
+            remote = retry_call(lambda: client.files.upload(file=str(local), config={"mime_type": "audio/mp4"}),
+                                "B1 upload", sleep=sleep)
             local.unlink(missing_ok=True)
             try:
                 remote = _wait_active(client, remote, sleep)

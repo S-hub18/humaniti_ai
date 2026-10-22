@@ -7,6 +7,7 @@ deleted as soon as the review is built.
 from __future__ import annotations
 
 import html
+import logging
 import os
 import subprocess
 import sys
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cqa.config import MODELS, load_dotenv  # noqa: E402
 from cqa.service import InputError, fetch_input, run_assessment  # noqa: E402
 
+log = logging.getLogger("cqa.app")
 GRADES = ["Poor", "Average", "Good", "Excellent"]
 STATUS_TEXT = {"met": "Met", "partial": "Partly met", "not_met": "Not met",
                "not_applicable": "Not applicable", "not_observable": "Not observed"}
@@ -174,6 +176,7 @@ def render_report(rep: dict) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     st.set_page_config(page_title="Class review", page_icon="♞", layout="wide")
     st.markdown(CSS, unsafe_allow_html=True)
     load_dotenv()
@@ -252,9 +255,16 @@ def main() -> None:
         except RuntimeError as exc:
             bar.empty()
             st.error(f"The review could not run: {exc}")
-        except Exception as exc:  # never show a stack trace to the user
+        except Exception as exc:  # never show a stack trace to the user; log it server side
             bar.empty()
-            st.error(f"The review stopped unexpectedly ({type(exc).__name__}). Try again, or try Mock mode.")
+            log.exception("review failed")
+            if type(exc).__name__ == "ServerError" or getattr(exc, "code", None) in (500, 502, 503, 504):
+                st.error("Gemini is overloaded right now and did not recover after several retries. "
+                         "Try again in a minute, or use Mock mode.")
+            elif getattr(exc, "code", None) == 429:
+                st.error("Gemini's rate limit was reached and did not clear after several retries. Try again in a minute.")
+            else:
+                st.error(f"The review stopped unexpectedly ({type(exc).__name__}). Try again, or try Mock mode.")
 
     rep = st.session_state.get("report")
     if rep:

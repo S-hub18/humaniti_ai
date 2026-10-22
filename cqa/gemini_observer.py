@@ -18,6 +18,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from cqa.config import model_id, prices_for
+from cqa.gemini_retry import retry_call, retry_delay
 from cqa.evidence import WINDOW_TOLERANCE_S, fmt_ts, parse_ts
 from cqa.media import MediaRef
 from cqa.observer import CallSpec, CallStats
@@ -49,7 +50,9 @@ class GeminiObserver:
         max_retries: int = 4,
         min_call_interval_s: float = 0.0,
         sleep=time.sleep,
+        on_retry=None,
     ) -> None:
+        self.on_retry = on_retry
         self.proxy_above_bytes = proxy_above_bytes
         self.max_retries = max_retries
         self.min_call_interval_s = min_call_interval_s
@@ -88,7 +91,7 @@ class GeminiObserver:
         tmpdir = Path(tempfile.mkdtemp(prefix="cqa_proxy_"))
         try:
             src = self._proxy(media, tmpdir)
-            f = self.client.files.upload(file=str(src), config={"mime_type": "video/mp4"})
+            f = self._retry(lambda: self.client.files.upload(file=str(src), config={"mime_type": "video/mp4"}), "upload")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
         try:
@@ -98,7 +101,8 @@ class GeminiObserver:
                     raise RuntimeError("Gemini file processing timed out")
                 time.sleep(self.poll_s)
                 waited += max(self.poll_s, 1e-3)
-                f = self.client.files.get(name=f.name)
+                name = f.name
+                f = self._retry(lambda: self.client.files.get(name=name), "file status")
             if f.state.name != "ACTIVE":
                 raise RuntimeError(f"Gemini file processing failed: {f.state.name}")
             return f
@@ -138,32 +142,20 @@ class GeminiObserver:
 
     @staticmethod
     def _retry_delay(exc: Exception) -> float | None:
-        """Seconds to wait if `exc` is a 429 / RESOURCE_EXHAUSTED, using the API's retryDelay when present."""
-        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-        text = str(exc)
-        if code != 429 and "RESOURCE_EXHAUSTED" not in text:
-            return None
-        m = re.search(r"retryDelay'?\"?:\s*'?\"?(\d+(?:\.\d+)?)s", text) or re.search(r"retry in (\d+(?:\.\d+)?)s", text)
-        return float(m.group(1)) if m else 30.0
+        """Kept for callers: base delay for a retryable error (429 or 5xx), else None."""
+        return retry_delay(exc, 0)
+
+    def _retry(self, fn, what: str):
+        return retry_call(fn, what, max_retries=self.max_retries, sleep=self._sleep, on_retry=self.on_retry)
 
     def _request_with_retry(self, f, spec: CallSpec, duration: float):
         if self._last_call is not None and self.min_call_interval_s > 0:
             wait = self.min_call_interval_s - (time.monotonic() - self._last_call)
             if wait > 0:
                 self._sleep(wait)
-        for attempt in range(self.max_retries + 1):
-            try:
-                resp = self._request(f, spec, duration)
-                self._last_call = time.monotonic()
-                return resp
-            except Exception as exc:
-                delay = self._retry_delay(exc)
-                if delay is None or attempt == self.max_retries:
-                    raise
-                wait = min(delay + 2.0, 120.0) * (1 + attempt * 0.5)
-                log.warning("Gemini rate limited (429); retry %d/%d in %.0f s", attempt + 1, self.max_retries, wait)
-                self._sleep(wait)
-        raise RuntimeError("unreachable")
+        resp = self._retry(lambda: self._request(f, spec, duration), f"{spec.name} call")
+        self._last_call = time.monotonic()
+        return resp
 
     def _stats(self, resp, latency: float) -> CallStats:
         u = resp.usage_metadata

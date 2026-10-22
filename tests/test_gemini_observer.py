@@ -235,3 +235,76 @@ def test_min_call_interval_spaces_calls():
         obs.observe(MEDIA, spec, 0)
         obs.observe(MEDIA, spec, 1)
     assert len(sleeps) == 1 and 60.0 < sleeps[0] <= 65.0
+
+
+from google.genai import errors as genai_errors
+
+
+def _server(code=503):
+    return genai_errors.ServerError(code, {"error": {"code": code, "message": "The model is overloaded", "status": "UNAVAILABLE"}})
+
+
+def test_503_then_success_with_backoff_and_callback():
+    obs, client = make([payload("main")])
+    sleeps, seen = [], []
+    obs._sleep, obs.on_retry = sleeps.append, lambda n, m, kind: seen.append((n, m, kind))
+    real = client.models.generate_content
+    calls = {"n": 0}
+
+    def flaky(**kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _server(503)
+        return real(**kw)
+
+    client.models.generate_content = flaky
+    out, _ = obs.observe(MEDIA, CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low"), 0)
+    assert out.items["homework"].status == Status.MET
+    assert len(sleeps) == 1 and 2.0 <= sleeps[0] <= 3.0  # base 2 s + jitter < 1 s
+    assert seen == [(1, 4, "server")]
+
+
+def test_500_exhausted_raises_clean_server_error_and_deletes_upload():
+    obs, client = make([payload("main")])
+    sleeps = []
+    obs._sleep = sleeps.append
+
+    def always(**kw):
+        raise _server(500)
+
+    client.models.generate_content = always
+    with pytest.raises(genai_errors.ServerError):
+        obs.observe(MEDIA, CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low"), 0)
+    assert len(sleeps) == 4 and sleeps == sorted(sleeps)  # exponential
+    assert client.files.deleted == ["files/1"]
+
+
+def test_400_is_not_retried():
+    bad = genai_errors.ClientError(400, {"error": {"code": 400, "message": "bad", "status": "INVALID_ARGUMENT"}})
+    obs, client = make([payload("main")], fail=bad)
+    obs._sleep = lambda s: pytest.fail("400 must not be retried")
+    with pytest.raises(genai_errors.ClientError):
+        obs.observe(MEDIA, CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low"), 0)
+
+
+def test_upload_and_processing_poll_are_retried():
+    obs, client = make([payload("main")])
+    obs._sleep = lambda s: None
+    real_upload, real_get = client.files.upload, client.files.get
+    n = {"up": 0, "get": 0}
+
+    def up(file, config=None):
+        n["up"] += 1
+        if n["up"] == 1:
+            raise _server(503)
+        return real_upload(file, config)
+
+    def get(name):
+        n["get"] += 1
+        if n["get"] == 1:
+            raise _server(504)
+        return real_get(name)
+
+    client.files.upload, client.files.get = up, get
+    obs.observe(MEDIA, CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low"), 0)
+    assert n["up"] == 2 and n["get"] >= 2

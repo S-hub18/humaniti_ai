@@ -176,3 +176,18 @@ def test_b1_in_mock_mode_reports_unavailable(clip):
     rep = run_assessment(clip, mode="mock", modules={"b1": True, "b2": False, "xc": False})
     assert rep["modules"]["b1"]["ok"] is False and "Gemini" in rep["modules"]["b1"]["error"]
     assert rep["label"]  # review still completes
+
+
+def test_gemini_retry_progress_reaches_ui_callback(clip, monkeypatch):
+    from cqa.observer import MockObserver
+    from cqa.rubric import ITEM_IDS, Status
+
+    msgs = []
+
+    def fake_observer(mode, tier, on_retry=None):
+        on_retry(1, 4, "server")  # simulate one 503 retry inside the observer
+        return MockObserver(oracle={i: Status.MET for i in ITEM_IDS}), "gemini-test-flash"
+
+    monkeypatch.setattr(service, "_observer", fake_observer)
+    run_assessment(clip, mode="gemini", modules={}, progress=lambda m, f: msgs.append(m))
+    assert "Gemini is busy, retrying… (attempt 1/4)" in msgs

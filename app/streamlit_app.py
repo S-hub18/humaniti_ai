@@ -36,22 +36,18 @@ STATUS_TEXT = {"met": "Met", "partial": "Partly met", "not_met": "Not met",
 STATUS_ORDER = {"not_met": 0, "partial": 1, "met": 2, "not_observable": 3, "not_applicable": 4}
 WARN_PREFIXES = ("compliance", "cap")
 
-# Colour tokens per Streamlit theme (not the OS setting: the app theme decides the background).
-# All text/background pairs meet WCAG AA (>= 4.5:1); chip text on status colours >= 4.5:1.
+# One palette, forced (see .streamlit/config.toml): the 8x8 chess light theme. No OS dark-mode switching -- that
+# was the original white-text-on-cream bug. All text/background pairs meet WCAG AA (>= 4.5:1; tested).
 TOKENS = {
     "light": {
-        "page": "#F5F7F4", "surface": "#FFFFFF", "ink": "#14212A", "muted": "#44535B", "line": "#CFD8D2",
-        "met": "#1F6B45", "partial": "#8A5A00", "notmet": "#A3263F", "na": "#5B6770", "chip-ink": "#FFFFFF",
-        "poor": "#A3263F", "average": "#8A5A00", "good": "#2F5D8A", "excellent": "#1F6B45",
-        "warn-bg": "#FBEAEC", "info-bg": "#EAF1F7", "mock-bg": "#FFF6E0",
-    },
-    "dark": {
-        "page": "#11171A", "surface": "#182126", "ink": "#EEF3EF", "muted": "#B3C0BA", "line": "#2C3A36",
-        "met": "#5CC08D", "partial": "#E3B341", "notmet": "#F07A90", "na": "#9AA6AC", "chip-ink": "#11171A",
-        "poor": "#F07A90", "average": "#E3B341", "good": "#7FB2E5", "excellent": "#5CC08D",
-        "warn-bg": "#3A1F25", "info-bg": "#1C2B38", "mock-bg": "#3A3016",
+        "page": "#F7F6EE", "surface": "#FFFFFF", "ink": "#14212A", "muted": "#44535B", "line": "#D8D6C6",
+        "met": "#2E5E3E", "partial": "#8A5A00", "notmet": "#A3263F", "na": "#5B6770", "chip-ink": "#FFFFFF",
+        "poor": "#A3263F", "average": "#8A5A00", "good": "#2F5D8A", "excellent": "#2E5E3E",
+        "warn-bg": "#FBEAEC", "info-bg": "#EEF1E8", "mock-bg": "#FFF4D8",
+        "board-light": "#EEEED2", "board-dark": "#7A9A5E",
     },
 }
+GRADE_PIECE = {"Poor": "\u265f", "Average": "\u265e", "Good": "\u265c", "Excellent": "\u265b"}  # pawn, knight, rook, queen
 
 CSS = """
 <style>
@@ -65,12 +61,17 @@ html, body, [class*="css"], .stMarkdown, p, li, label{
 [data-stale="true"]{ opacity:1 !important; filter:none !important; transition:none !important; }
 [data-testid="stProgress"] p{ color:var(--ink) !important; font-weight:700; font-size:1.02rem; }
 [data-testid="stFileUploaderDropzoneInstructions"]{ display:none !important; }
-.cq-h1{ font-size:2.5rem; font-weight:800; line-height:1.08; color:var(--ink); margin:0 0 .4rem 0; }
+.cq-h1{ font-size:2.9rem; font-weight:900; line-height:1.02; letter-spacing:-0.02em; color:var(--ink); margin:0 0 .5rem 0; }
+.cq-board{ height:12px; width:192px; border-radius:2px; margin:0 0 1.2rem 0;
+  background:repeating-conic-gradient(var(--board-dark) 0 25%%, var(--board-light) 0 50%%) 0 0/12px 12px; }
 .cq-sub{ color:var(--muted); font-size:1.08rem; line-height:1.5; max-width:62ch; margin:0 0 1.4rem 0; }
 .cq-section{ font-size:1.25rem; font-weight:800; color:var(--ink); margin:1.8rem 0 .5rem 0; }
-.cq-hero{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:1rem 2rem; padding:1.2rem 1.4rem; margin:.4rem 0 .6rem 0;
+.cq-hero{ position:relative; overflow:hidden; display:grid; grid-template-columns:auto 1fr; align-items:center; gap:1rem 2rem; padding:1.2rem 1.4rem; margin:.4rem 0 .6rem 0;
   background:var(--surface); border:1px solid var(--line); border-left:10px solid var(--g); border-radius:6px; }
-.cq-grade{ font-size:3.6rem; font-weight:800; line-height:1; color:var(--g); }
+.cq-hero::after{ content:""; position:absolute; left:10px; bottom:0; width:72px; height:48px; opacity:.18; pointer-events:none;
+  background:repeating-conic-gradient(var(--board-dark) 0 25%%, transparent 0 50%%) 0 0/24px 24px; }
+.cq-grade{ font-size:3.6rem; font-weight:900; line-height:1; color:var(--g); }
+.cq-piece{ font-size:3.4rem; line-height:1; color:var(--g); }
 .cq-meta{ display:flex; flex-direction:column; gap:.35rem; }
 .cq-score{ font-size:1.25rem; font-weight:700; color:var(--ink); }
 .cq-conf{ align-self:flex-start; padding:.15rem .65rem; border-radius:999px; border:2px solid var(--ink); color:var(--ink); font-weight:700; font-size:.9rem; }
@@ -123,12 +124,7 @@ html, body, [class*="css"], .stMarkdown, p, li, label{
 
 
 def theme_css() -> str:
-    try:
-        kind = (st.context.theme.type or "light") if hasattr(st.context, "theme") else "light"
-    except Exception:
-        kind = "light"
-    tokens = TOKENS["dark" if kind == "dark" else "light"]
-    return CSS % {"vars": " ".join(f"--{k}:{v};" for k, v in tokens.items())}
+    return CSS % {"vars": " ".join(f"--{k}:{v};" for k, v in TOKENS["light"].items())}
 
 
 def esc(s) -> str:
@@ -156,7 +152,8 @@ def hero_html(rep: dict) -> str:
     summary = ", ".join(f"{counts[k]} {STATUS_TEXT[k].lower()}" for k in ("met", "partial", "not_met") if counts.get(k))
     conf = esc(rep["confidence"])
     if rep["label"]:
-        head = f'<div class="cq-grade">{esc(rep["label"])}</div>'
+        head = (f'<span class="cq-piece" aria-hidden="true">{GRADE_PIECE[rep["label"]]}</span>'
+                f'<div class="cq-grade">{esc(rep["label"])}</div>')
         score = f'<div class="cq-score">Score {rep["score"]:.0f} of 100</div>'
     else:
         head = '<div class="cq-grade">Not graded</div>'
@@ -304,7 +301,8 @@ def main() -> None:
 
     st.markdown('<h1 class="cq-h1">Review a recorded chess class</h1>'
                 '<p class="cq-sub">Add a class recording, a link to one, or just its Zoom transcript. You get a grade from '
-                'Poor to Excellent, with timestamped evidence for each part of the 8x8 teaching rubric.</p>',
+                'Poor to Excellent, with timestamped evidence for each part of the 8x8 teaching rubric.</p>'
+                '<div class="cq-board" aria-hidden="true"></div>',
                 unsafe_allow_html=True)
 
     src_tab, link_tab, tx_tab = st.tabs(["Upload a recording", "Paste a link", "Transcript only"])

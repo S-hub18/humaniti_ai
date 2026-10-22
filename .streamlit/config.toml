@@ -6,16 +6,11 @@ enableXsrfProtection = true
 [browser]
 gatherUsageStats = false
 
-# Both palettes are defined so Streamlit's light/dark switch (and the OS preference) work, and the app's own
-# colour tokens (chosen from st.context.theme.type) always match the theme that is actually rendered.
-[theme.light]
-primaryColor = "#1F6B45"
-backgroundColor = "#F5F7F4"
-secondaryBackgroundColor = "#E8EEE9"
+# One theme only: the 8x8 chess light theme. It is forced (OS dark mode is not followed) and the app's own CSS
+# colours come from the same palette (app/streamlit_app.py TOKENS), so text always stays dark ink on cream.
+[theme]
+base = "light"
+primaryColor = "#2E5E3E"
+backgroundColor = "#F7F6EE"
+secondaryBackgroundColor = "#ECEBDD"
 textColor = "#14212A"
-
-[theme.dark]
-primaryColor = "#5CC08D"
-backgroundColor = "#11171A"
-secondaryBackgroundColor = "#182126"
-textColor = "#EEF3EF"

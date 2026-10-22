@@ -115,3 +115,13 @@ def test_wcag_aa_contrast_both_themes():
         pairs += [(k, "surface") for k in ("poor", "average", "good", "excellent")]  # grade word on the hero card
         for fg, bg in pairs:
             assert _ratio(t[fg], t[bg]) >= 4.5, (theme, fg, bg, round(_ratio(t[fg], t[bg]), 2))
+
+
+def test_single_forced_chess_light_theme():
+    import tomllib
+
+    cfg = tomllib.loads((Path(APP).parents[1] / ".streamlit" / "config.toml").read_text())
+    assert cfg["theme"]["base"] == "light" and "light" not in cfg["theme"] and "dark" not in cfg["theme"]
+    src = Path(APP).read_text()
+    assert "prefers-color-scheme" not in src  # no OS-driven colour switching (the original white-on-cream bug)
+    assert cfg["theme"]["textColor"].upper() == "#14212A" and cfg["theme"]["backgroundColor"].upper() == "#F7F6EE"

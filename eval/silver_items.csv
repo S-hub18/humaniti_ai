@@ -1,0 +1,71 @@
+class,item,status,source,evidence
+B392,individual_calling,met,ours,05:43 06:30 08:20 12:06
+B392,rapport_intro,partial,ours,00:09 16:23
+B392,energy_warmth,partial,ours,06:24 08:45
+B392,camera_background,not_met,ours,
+B392,homework,partial,ours,49:21 44:40
+B392,closing,partial,ours,41:11 49:07
+B392,new_joiner_intro,partial,ours,23:56
+B435a,individual_calling,partial,ours,14:12 33:13
+B435a,rapport_intro,partial,ours,01:41
+B435a,energy_warmth,partial,ours,03:49 33:00
+B435a,camera_background,partial,ours,
+B435a,homework,not_met,ours,37:37
+B435a,closing,met,ours,36:22 37:41
+B435a,new_joiner_intro,partial,ours,15:41
+B435g,individual_calling,met,ours,19:11 19:46
+B435g,rapport_intro,partial,ours,02:36 03:42 04:11
+B435g,energy_warmth,partial,ours,20:02 11:02
+B435g,camera_background,not_met,ours,
+B435g,homework,partial,ours,19:02 24:59 44:20
+B435g,closing,partial,ours,18:46 44:20
+B435g,new_joiner_intro,not_applicable,ours,
+B441,individual_calling,met,ours,12:23 37:47
+B441,rapport_intro,partial,ours,00:19 07:03
+B441,energy_warmth,met,ours,42:28 52:46 01:02:31
+B441,camera_background,partial,ours,
+B441,homework,not_met,ours,34:10 56:10
+B441,closing,partial,ours,55:55
+B441,new_joiner_intro,not_applicable,ours,07:03
+B472,individual_calling,met,ours,36:03 37:16 35:57
+B472,rapport_intro,met,ours,00:20 07:35 09:49 16:21
+B472,energy_warmth,partial,ours,41:30 16:07
+B472,camera_background,met,ours,28:00
+B472,homework,met,ours,47:02 47:29
+B472,closing,partial,ours,55:49 49:59
+B472,new_joiner_intro,not_applicable,ours,12:17 19:15
+B482,individual_calling,partial,ours,00:12:00 00:18:57
+B482,rapport_intro,not_met,ours,00:04:07
+B482,energy_warmth,partial,ours,00:21:30 00:59:00
+B482,camera_background,not_observable,ours,
+B482,homework,not_met,ours,00:31:08
+B482,closing,partial,ours,00:58:51 00:58:58
+B482,new_joiner_intro,partial,ours,00:11:58 00:12:10
+B491,individual_calling,met,ours,28:02 49:35 51:22
+B491,rapport_intro,met,ours,03:26 15:17
+B491,energy_warmth,met,ours,01:07 22:49
+B491,camera_background,met,ours,00:49
+B491,homework,not_met,ours,51:27
+B491,closing,partial,ours,52:10 52:27
+B491,new_joiner_intro,met,ours,02:36 03:13
+B516,individual_calling,partial,ours,05:25 09:09
+B516,rapport_intro,partial,ours,01:01
+B516,energy_warmth,partial,ours,33:50
+B516,camera_background,partial,ours,
+B516,homework,met,ours,14:47 43:10
+B516,closing,partial,ours,43:10 43:32
+B516,new_joiner_intro,not_applicable,ours,
+B552,individual_calling,partial,ours,09:07 17:08
+B552,rapport_intro,partial,ours,00:22 06:05 06:43
+B552,energy_warmth,partial,ours,06:31 20:42
+B552,camera_background,met,ours,18:33
+B552,homework,met,ours,44:26 44:34
+B552,closing,met,ours,18:36 43:34 45:15 45:27 45:45
+B552,new_joiner_intro,not_applicable,ours,04:37 05:12
+B558,individual_calling,met,ours,05:51 09:15
+B558,rapport_intro,partial,ours,02:19 02:23 04:36
+B558,energy_warmth,met,ours,06:08 28:39
+B558,camera_background,met,ours,
+B558,homework,not_met,ours,46:00
+B558,closing,partial,ours,45:43 46:00
+B558,new_joiner_intro,not_applicable,ours,

@@ -1,0 +1,15 @@
+# Metamorphic / counterfactual / invariance variants (spec §7.1).
+# Outputs are written ONLY to .scratch/eval_variants/ (gitignored: children are in these recordings).
+# Holdout classes (B552, B482) are deliberately NOT used here.
+# Times are seconds in the source recording; homework windows were located in the Zoom .vtt.
+variants:
+  - {id: B472_trim_opening, source_class: B472, op: trim_opening, params: {start_s: 400}, expect: {item: rapport_intro, direction: down}}
+  - {id: B491_trim_opening, source_class: B491, op: trim_opening, params: {start_s: 400}, expect: {item: rapport_intro, direction: down}}
+  - {id: B472_cut_homework, source_class: B472, op: cut_segment, params: {start_s: 2700, end_s: 2860}, expect: {item: homework, direction: flip_to_not_met}}
+  - {id: B516_cut_homework, source_class: B516, op: cut_segment, params: {start_s: 870, end_s: 945}, expect: {item: homework, direction: flip_to_not_met}}
+  - {id: B472_blackout_tile, source_class: B472, op: blackout_tile, params: {}, expect: {direction: gate_fires}}
+  - {id: B435g_blackout_tile, source_class: B435g, op: blackout_tile, params: {}, expect: {direction: gate_fires}}
+  - {id: B441_cut_tail, source_class: B441, op: cut_tail, params: {end_s: 4230}, expect: {direction: unchanged, tol: 5}}
+  - {id: B491_pad_tail, source_class: B491, op: pad_tail, params: {pad_s: 300}, expect: {direction: unchanged, tol: 5}}
+  - {id: B472_reencode_low, source_class: B472, op: reencode_low, params: {}, expect: {direction: unchanged, tol: 5}}
+  - {id: B435a_reencode_low, source_class: B435a, op: reencode_low, params: {}, expect: {direction: unchanged, tol: 5}}

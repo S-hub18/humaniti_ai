@@ -1,0 +1,17 @@
+# Eval manifest. Recordings live in the gitignored "class recordings " folder (note trailing spaces).
+# ordinal: Poor=0 Average=1 Good=2 Excellent=3 ; weak & quality_issue -> 0 ; demo -> null (OOD only)
+# holdout: fixed BEFORE any prompt work; scored once at the end (spec §7).
+root: "class recordings "
+classes:
+  - {id: B491,  folder: "excellent",      video_glob: "B491*.mp4", vtt_glob: "B491*.vtt", label: excellent,     ordinal: 3,    holdout: false}
+  - {id: B472,  folder: "excellent",      video_glob: "B472*.mp4", vtt_glob: "B472*.vtt", label: excellent,     ordinal: 3,    holdout: false}
+  - {id: B552,  folder: "good",           video_glob: "B552*.mp4", vtt_glob: "B552*.vtt", label: good,          ordinal: 2,    holdout: true}
+  - {id: B435g, folder: "good",           video_glob: "B435*.mp4", vtt_glob: "B435*.vtt", label: good,          ordinal: 2,    holdout: false}
+  - {id: B516,  folder: "average ",       video_glob: "B516*.mp4", vtt_glob: "B516*.vtt", label: average,       ordinal: 1,    holdout: false}
+  - {id: B435a, folder: "average ",       video_glob: "B435*.mp4", vtt_glob: "B435*.vtt", label: average,       ordinal: 1,    holdout: false}
+  - {id: B558,  folder: "weak",           video_glob: "B558*.mp4", vtt_glob: "B558*.vtt", label: weak,          ordinal: 0,    holdout: false}
+  - {id: B482,  folder: "weak",           video_glob: "B482*.mp4", vtt_glob: "B482*.vtt", label: weak,          ordinal: 0,    holdout: true}
+  - {id: B392,  folder: "quality issue ", video_glob: "B392*.mp4", vtt_glob: "B392*.vtt", label: quality_issue, ordinal: 0,    holdout: false}
+  - {id: B441,  folder: "quality issue ", video_glob: "B441*.mp4", vtt_glob: "B441*.vtt", label: quality_issue, ordinal: 0,    holdout: false}
+  - {id: DemoEN, folder: "demo ",         video_glob: "Demo english.mp4",  vtt_glob: "demo english*.vtt",   label: demo, ordinal: null, holdout: false}
+  - {id: DemoML, folder: "demo ",         video_glob: "Demo*malayalam.mp4", vtt_glob: "demo malayalam*.vtt", label: demo, ordinal: null, holdout: false}

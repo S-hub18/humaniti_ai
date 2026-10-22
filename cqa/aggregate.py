@@ -93,8 +93,16 @@ def merge_calls(
             continue  # a focus window's "not applicable" cannot erase a main-call "not met"
         items[item_id] = o
 
-    hw = [c.items["homework"] for c in calls if _valued(c.items.get("homework"))]
-    if hw:  # majority across calls; ties go to the stricter (lower) status
+    # Homework can happen anywhere, so a focus call (opening/closing) votes only when it cites homework evidence
+    # inside its own window (evidence was already window-validated); otherwise it abstains. The main call always votes.
+    hw = []
+    for c in calls:
+        o = c.items.get("homework")
+        if not _valued(o):
+            continue
+        if c is main or o.evidence:
+            hw.append(o)
+    if hw:  # majority across voting calls; ties go to the stricter (lower) status
         counts = Counter(o.status for o in hw)
         top = max(counts.values())
         winner = min((st for st, n in counts.items() if n == top), key=lambda st: ORDINAL[st])

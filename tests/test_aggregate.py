@@ -135,3 +135,22 @@ def test_homework_needs_majority_tie_goes_conservative():
     assert merge_calls(main, None, closing).items["homework"].status == S.NOT_MET  # 1-1 tie -> stricter
     opening = out("opening", {"homework": io(S.MET, "05:00")})
     assert merge_calls(main, opening, closing).items["homework"].status == S.MET  # 2-1 majority
+
+
+def test_focus_call_abstains_on_homework_without_in_window_evidence():
+    # B472-style: homework given mid-class; the closing window never saw it and says not_met (no evidence)
+    main = full_main(homework=io(S.MET, "45:30"))
+    closing = out("closing", {"homework": io(S.NOT_MET)})
+    opening = out("opening", {"homework": io(S.NOT_MET)})
+    assert merge_calls(main, opening, closing).items["homework"].status == S.MET
+
+
+def test_focus_call_with_in_window_evidence_still_votes():
+    main = full_main(homework=io(S.MET, "14:47"))
+    closing = out("closing", {"homework": io(S.PARTIAL, "43:15")})
+    assert merge_calls(main, None, closing).items["homework"].status == S.PARTIAL  # 1-1 tie -> stricter
+
+
+def test_main_call_always_votes_on_homework():
+    main = full_main(homework=io(S.NOT_MET))
+    assert merge_calls(main, None, out("closing", {})).items["homework"].status == S.NOT_MET

@@ -22,7 +22,12 @@ NEUTRAL_PRIOR = 0.5
 # rubric is evidenced: at most two items may be unknown (e.g. new joiners not applicable + one unobservable), and
 # no single item (max weight 20) can swing the grade by more than one band on its own.
 MIN_GRADED_ITEMS = 5
-NA_ALLOWED = {"new_joiner_intro"}  # only item the rubric allows to be "not applicable"
+NA_ALLOWED = {"new_joiner_intro"}
+# Not-met cap (from the rubric, not fitted to labels): each not_met item is a checklist criterion the class clearly
+# failed. "Good" means most of the checklist is met, so two clear failures cap the grade at Average; three failures
+# means about half of the six applicable items failed, which is Poor whatever the weighted score says.
+CAP_AVERAGE_NOT_MET = 2
+CAP_POOR_NOT_MET = 3  # only item the rubric allows to be "not applicable"
 
 CameraField = Literal["branded_background", "face_visible", "camera_on_while_teaching", "lighting"]
 
@@ -145,6 +150,13 @@ def score(
         flags.append("improve:camera_off_at_times")
     if grade is not None and any(f.startswith("compliance:") for f in flags):
         grade = Grade.POOR  # gates only ever lower the grade; POOR is the floor
+    n_not_met = sum(1 for ic in c.items.values() if ic.status == Status.NOT_MET)
+    if grade is not None and n_not_met >= CAP_POOR_NOT_MET:
+        flags.append("cap:three_or_more_not_met")
+        grade = Grade.POOR
+    elif grade is not None and n_not_met >= CAP_AVERAGE_NOT_MET and grade > Grade.AVERAGE:
+        flags.append("cap:two_not_met")
+        grade = Grade.AVERAGE
 
     return Assessment(
         grade=grade,

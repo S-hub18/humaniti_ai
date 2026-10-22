@@ -93,7 +93,7 @@ The focus calls use `start_offset` and `end_offset` on the same uploaded file. T
 |---|---|
 | `rapport_intro`, `new_joiner_intro` | opening call; main call if the opening result is null. An opening `not_applicable` cannot override a main `not_met` |
 | `closing` | closing call; main call if the closing result is null. A closing `not_applicable` cannot override a main `not_met` |
-| `homework` | majority across the calls that report it; a tie goes to the stricter status |
+| `homework` | majority across voting calls; a tie goes to the stricter status. The main call always votes. The opening and closing calls vote only when they cite homework evidence inside their own window, and otherwise abstain, because homework can be given mid-class (B472 at 45–47 min) where a focus window can't see it. |
 | `camera_background` and its sub-observations | most conservative non-null value across the calls |
 | `individual_calling`, `energy_warmth` | main call |
 
@@ -125,6 +125,11 @@ A `met` or `partial` status left with no valid evidence becomes `not_observable`
    - `branded_background == absent` caps the grade at Poor and flags `compliance:no_branded_background` (B392).
    - `face_visible == rarely` caps the grade at Poor and flags `compliance:face_not_visible` (B441).
    - `camera_on_while_teaching == sometimes` adds an improvement flag but no cap (B482).
+   - **Not-met cap** (from the rubric, not fitted to labels):
+     - Two items `not_met` caps the grade at Average.
+     - Three or more caps it at Poor.
+     - Why: each `not_met` is a checklist criterion the class clearly failed. "Good" means most of the checklist is met, so two clear failures can't be Good, whatever the weights add up to. Three failures is about half of the six applicable items, which is Poor.
+     - Like the gates, the cap only ever lowers a grade.
 5. **Cutpoints** are priors set before any eval: Poor below 50; Average 50 to under 68; Good 68 to under 84; Excellent 84 and above. Leave-one-out tuning may move each cutpoint by at most ±8. The tuned values are adopted only if they beat the priors by at least one exact hit.
 6. **Confidence:**
    - high: mean item agreement ≥ 0.9, the score is more than 4 points from the nearest cutpoint, there is no crosscheck disagreement and no unsupported claim;

@@ -148,3 +148,22 @@ def test_not_applicable_only_counts_for_new_joiners():
     na_homework = score(cons(homework=S.NOT_APPLICABLE))
     assert na_new.score == 100.0
     assert na_homework.score < 100.0  # treated as unobserved (neutral prior), not removed
+
+
+# ---- not-met cap (rubric-derived): 2 not_met -> at most Average, 3+ -> Poor ----
+def test_two_not_met_caps_at_average():
+    a = score(cons(homework=S.NOT_MET, closing=S.NOT_MET))  # 78 -> would be Good
+    assert a.score == pytest.approx(78.0)
+    assert a.grade == Grade.AVERAGE and "cap:two_not_met" in a.flags
+
+
+def test_three_not_met_caps_at_poor():
+    a = score(cons(homework=S.NOT_MET, closing=S.NOT_MET, new_joiner_intro=S.NOT_MET))  # 70 -> Good
+    assert a.grade == Grade.POOR and "cap:three_or_more_not_met" in a.flags
+
+
+def test_one_not_met_no_cap_and_cap_never_raises():
+    one = score(cons(homework=S.NOT_MET))
+    assert one.grade == Grade.EXCELLENT and not any(f.startswith("cap:") for f in one.flags)
+    low = score(cons(default=S.NOT_MET, individual_calling=S.MET, rapport_intro=S.PARTIAL))
+    assert low.grade == Grade.POOR

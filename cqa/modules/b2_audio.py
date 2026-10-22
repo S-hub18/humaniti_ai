@@ -22,7 +22,7 @@ FRAME_S = 0.030
 VAD_ABS_DB = -45.0  # frames quieter than this are never speech
 VAD_REL_DB = 30.0  # ...nor frames this far below the file's p95 frame level
 MIN_SPEECH_S = 60.0
-LOW_LEVEL_P90_DB = -21.0  # provisional, calibrated on n<=2 local files
+LOW_LEVEL_P90_DB = -21.0  # untuned prior (NOT fitted to n=3 files); info-only flag, never affects the grade
 PITCH_HIGH_ST = 7.0  # provisional, calibrated on n<=2 local files
 DYN_HIGH_DB = 6.0  # provisional, calibrated on n<=2 local files
 PITCH_LOW_ST = 3.0  # provisional, calibrated on n<=2 local files
@@ -94,7 +94,7 @@ def _read_wav(path) -> tuple[np.ndarray, int]:
         raw = w.readframes(w.getnframes())
     if sw != 2:
         raise ValueError(f"expected 16-bit wav, got {sw * 8}-bit")
-    x = np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
+    x = np.frombuffer(raw, dtype="<i2").astype(np.float32) / np.float32(32768.0)
     if ch > 1:
         x = x[: len(x) // ch * ch].reshape(-1, ch).mean(axis=1)
     return x, sr
@@ -140,7 +140,10 @@ def _analyze(wav_path, teacher_turns, teaching_window) -> ModuleResult:
     if nf == 0:
         return ModuleResult(module="b2", features=feats)
     frames = x[: nf * hop].reshape(nf, hop)
-    rms = np.sqrt((frames**2).mean(axis=1))
+    rms = np.empty(nf, dtype=np.float32)
+    for i in range(0, nf, 20000):  # chunked to avoid a full-size squared temporary
+        blk = frames[i : i + 20000]
+        rms[i : i + 20000] = np.sqrt(np.einsum("ij,ij->i", blk, blk) / hop)
     db = 20 * np.log10(np.maximum(rms, 1e-6))  # floor -120 dBFS
     centers = (np.arange(nf) + 0.5) * hop / sr
     dur = len(x) / sr

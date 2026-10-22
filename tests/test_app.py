@@ -58,3 +58,11 @@ def test_sample_review_button_renders_a_mock_report(monkeypatch):
     assert not at.exception
     page = " ".join(m.value for m in at.markdown)
     assert "Mock result" in page and "cq-rank" in page
+
+
+def test_esc_collapses_blank_lines():
+    src = Path(APP).read_text().replace("\nmain()\n", "\n")
+    mod = type(pytest)("app_mod2")
+    mod.__dict__["__file__"] = APP
+    exec(compile(src, APP, "exec"), mod.__dict__)
+    assert "\n" not in mod.esc("line one\n\n![x](http://evil/t.png)")

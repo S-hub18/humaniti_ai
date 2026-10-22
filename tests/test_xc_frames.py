@@ -134,7 +134,8 @@ def test_branded_unclear_between_zero_and_20pct():
 
 
 def test_face_rarely_mostly_unclear():
-    assert _gate(analyze_frames(_frames(40), face_detector=_no_face), "face_visible").value == "rarely"
+    assert _gate(analyze_frames(_frames(40), face_detector=_no_face, allow_rarely=True), "face_visible").value == "rarely"
+    assert _gate(analyze_frames(_frames(40), face_detector=_no_face), "face_visible").value == "unclear"  # opt-in
     assert _gate(analyze_frames(_frames(40), face_detector=_one_face), "face_visible").value == "mostly"
     assert _gate(analyze_frames(_frames(20), face_detector=_no_face), "face_visible").value == "unclear"
     flip = iter([1, 0] * 20)

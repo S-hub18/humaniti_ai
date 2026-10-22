@@ -26,10 +26,6 @@ LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "xc_logo.png"
 
 # Speaker tile geometry (measured on 1280x720 frames: x >= ~1065, y <= ~120).
 TILE_X0, TILE_Y1 = 0.82, 0.17
-# Layout heuristic: a screen-share frame has a tile that contrasts with the strip to its left.
-STRIP_X0 = 0.70
-LAYOUT_CONTRAST = 40.0
-BRIGHT_PAGE = 120.0
 FULL_LOGO_FRAC = 0.4  # logo at least this wide (fraction of frame width) => full-frame speaker view
 FULL_FACE_FRAC = 0.25
 BLANK_STD = 4.0  # tile/frame with almost no variation (camera off) is not usable
@@ -50,6 +46,9 @@ FACE_MOSTLY_RATE = 0.60
 # the background (B435g, B482: tile rarely on screen) and kids' faces satisfy the 'faced non-logo' test,
 # so a default 'absent' could falsely cap a class at Poor.
 ALLOW_ABSENT_DEFAULT = False
+# 'rarely' is opt-in too: the top-right crop is assumed to be the speaker tile; another Zoom layout would
+# yield faceless crops and could falsely cap a class. Seen layouts so far are too few to trust it by default.
+ALLOW_RARELY_DEFAULT = False
 
 FaceDetector = Callable[[np.ndarray], int]
 _TEMPLATE: np.ndarray | None = None
@@ -156,6 +155,7 @@ def analyze_frames(
     frames: list[tuple[float, np.ndarray]],
     face_detector: FaceDetector | None = None,
     allow_absent: bool = ALLOW_ABSENT_DEFAULT,
+    allow_rarely: bool = ALLOW_RARELY_DEFAULT,
 ) -> ModuleResult:
     detect = face_detector or haar_faces
     kinds: Counter = Counter()
@@ -192,7 +192,7 @@ def analyze_frames(
     if n < MIN_FRAMES:
         fv = "unclear"
     elif face_rate < FACE_RARELY_RATE:
-        fv = "rarely"
+        fv = "rarely" if allow_rarely else "unclear"
     elif face_rate >= FACE_MOSTLY_RATE:
         fv = "mostly"
     else:

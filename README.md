@@ -20,7 +20,9 @@ teaching rubric.
 recording ─► local ingest (ffprobe, audio, sampled frames)
           ─► Gemini Flash observer: main pass over the full video + audio, plus higher-detail
              passes on the first and last 10 minutes; repeated 3×, majority vote per rubric item
-          ─► local modules: audio delivery (B2), camera / 8x8 background crosscheck (XC)
+          ─► modules: transcript judge (B1: .vtt or Gemini audio transcription → kids pseudonymised →
+             Gemini text scoring, quotes verified), audio delivery (B2, local), camera / 8x8 background
+             crosscheck (XC, local)
           ─► deterministic scorer in code: evidence validation, weights, compliance gates,
              demo detection, cutpoints  ─►  grade + confidence + evidence
 ```
@@ -33,6 +35,9 @@ recording ─► local ingest (ffprobe, audio, sampled frames)
   are matched against the transcript when one is available. Claims with no surviving evidence don't count.
 - **Compliance gates.** A missing branded background, or a teacher whose face is rarely visible, caps the
   grade at Poor. The local crosscheck can only make these checks stricter.
+- **Transcript judge (B1).** In Gemini mode, the transcript is scored separately (your Zoom `.vtt`, or Gemini
+  transcribes the audio in 10-minute chunks). Children are replaced with Kid1, Kid2… locally; a fail-closed check
+  blocks scoring if any known name survives. Its verified judgements add one vote per item.
 - **Demos are detected.** One-to-one trial classes are reported as observations, not graded.
 
 Full design: [`docs/design/system-design.md`](docs/design/system-design.md). Implementation plan:
@@ -78,6 +83,7 @@ On Hugging Face Spaces, add `GEMINI_API_KEY` as a Space secret. The upload limit
 uv run pytest -q                                  # unit + integration tests (no API calls)
 uv run python -m eval.run_eval --observer mock    # harness smoke run (numbers are NOT results)
 uv run python -m eval.run_eval --observer gemini  # real eval (costs API credits)
+uv run python -m eval.run_eval --observer gemini --b1   # + B1 transcript judge, adds a core+b1 ablation row
 uv run python -m eval.variants --list             # metamorphic / invariance variants
 ```
 

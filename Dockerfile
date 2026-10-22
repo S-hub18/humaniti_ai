@@ -22,7 +22,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY --chown=user cqa ./cqa
 COPY --chown=user app ./app
 COPY --chown=user .streamlit ./.streamlit
-COPY --chown=user eval ./eval
 
 EXPOSE 7860
 CMD ["streamlit", "run", "app/streamlit_app.py", "--server.port=7860", "--server.address=0.0.0.0"]

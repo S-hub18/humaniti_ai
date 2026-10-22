@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from cqa.evidence import fmt_ts
 from cqa.media import MediaRef
-from cqa.rubric import CALL_ITEMS, ORDINAL, Status
+from cqa.rubric import CALL_ITEMS, ITEM_BY_ID, ORDINAL, Status
 from cqa.schema import CameraObs, Evidence, ItemObservation, ObserverOutput
 
 FOCUS_S = 600.0
@@ -98,7 +98,9 @@ class MockObserver:
             rng = random.Random(f"{self.seed}|{spec.name}|{sample_idx}|{item_id}")
             if status in ORDINAL and rng.random() < self.noise:
                 status = rng.choice(_NEIGHBOURS[status])
-            ev = [Evidence(t_start=t, observation=f"mock evidence for {item_id}")] if status in (Status.MET, Status.PARTIAL) else []
+            title = ITEM_BY_ID[item_id].title.lower()
+            ev = [Evidence(t_start=t, observation=f"Example moment for {title} (demo data, not a real observation)")] \
+                if status in (Status.MET, Status.PARTIAL) else []
             items[item_id] = ItemObservation(status=status, evidence=ev, rationale="mock")
         out = ObserverOutput(
             call=spec.name,

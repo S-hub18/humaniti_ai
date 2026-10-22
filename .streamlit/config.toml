@@ -6,9 +6,16 @@ enableXsrfProtection = true
 [browser]
 gatherUsageStats = false
 
-[theme]
-base = "light"
-primaryColor = "#2F6F4E"
-backgroundColor = "#F4F6F2"
-secondaryBackgroundColor = "#E9EEE6"
-textColor = "#1F2A2E"
+# Both palettes are defined so Streamlit's light/dark switch (and the OS preference) work, and the app's own
+# colour tokens (chosen from st.context.theme.type) always match the theme that is actually rendered.
+[theme.light]
+primaryColor = "#1F6B45"
+backgroundColor = "#F5F7F4"
+secondaryBackgroundColor = "#E8EEE9"
+textColor = "#14212A"
+
+[theme.dark]
+primaryColor = "#5CC08D"
+backgroundColor = "#11171A"
+secondaryBackgroundColor = "#182126"
+textColor = "#EEF3EF"

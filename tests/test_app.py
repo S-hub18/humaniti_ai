@@ -90,3 +90,28 @@ def test_transcript_only_report_shows_badge():
     page = " ".join(m.value for m in at.markdown)
     assert "Transcript-only review" in page
     assert any(t.label == "Transcript only" for t in at.tabs)
+
+
+def _lum(hexc):
+    r, g, b = (int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def _ratio(a, b):
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_wcag_aa_contrast_both_themes():
+    src = Path(APP).read_text().replace("\nmain()\n", "\n")
+    mod = type(pytest)("app_mod3")
+    mod.__dict__["__file__"] = APP
+    exec(compile(src, APP, "exec"), mod.__dict__)
+    for theme, t in mod.TOKENS.items():
+        pairs = [("ink", "page"), ("muted", "page"), ("ink", "surface"), ("muted", "surface"),
+                 ("ink", "warn-bg"), ("ink", "info-bg"), ("ink", "mock-bg")]
+        pairs += [("chip-ink", k) for k in ("met", "partial", "notmet", "na", "poor", "average", "good", "excellent")]
+        pairs += [(k, "surface") for k in ("poor", "average", "good", "excellent")]  # grade word on the hero card
+        for fg, bg in pairs:
+            assert _ratio(t[fg], t[bg]) >= 4.5, (theme, fg, bg, round(_ratio(t[fg], t[bg]), 2))

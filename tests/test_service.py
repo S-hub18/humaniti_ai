@@ -283,3 +283,12 @@ def test_gemini_progress_names_steps_with_eta(clip, monkeypatch):
     for step in ("main video call", "opening", "closing"):
         assert step in text
     assert "about" in text  # rough ETA shown
+
+
+def test_report_items_carry_absence_and_vote_counts(clip):
+    rep = run_assessment(clip, mode="mock", modules={})
+    hw = next(it for it in rep["items"] if it["id"] == "homework")
+    assert hw["status"] == "not_met" and hw["absence"].startswith("No homework")
+    assert hw["votes_total"] == 3 and hw["votes_agree"] == 3
+    assert not any("mock evidence for" in e["observation"] for it in rep["items"] for e in it["evidence"])
+    assert all(":" not in t.split(" ")[0] for t in rep["flag_text"])  # no raw codes like audio_defect:low_level

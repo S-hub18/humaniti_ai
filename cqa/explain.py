@@ -23,19 +23,26 @@ FLAG_TEXT = {
     "compliance:face_not_visible": "Compliance: the teacher's face was rarely visible (grade capped at Poor).",
     "improve:camera_off_at_times": "Teacher camera was off at times while teaching.",
     "transcript_only:no_camera": "Transcript-only review: camera and background can't be judged from a transcript, so that item is not scored and confidence is at most medium.",
+    "audio_defect:low_level": "The teacher's audio level was low for much of the class; some speech may be hard to hear.",
+    "audio_defect:dropouts": "The audio dropped out several times during speech.",
     "cap:two_not_met": "Two checklist items were clearly not met, so the grade is capped at Average.",
     "cap:three_or_more_not_met": "Three or more checklist items were clearly not met, so the grade is capped at Poor.",
 }
 
 
 def _flag_text(flag: str) -> str:
+    """Every flag becomes a plain-English sentence; raw codes never reach users."""
     if flag in FLAG_TEXT:
         return FLAG_TEXT[flag]
+    if flag.startswith("audio_defect:"):
+        return "The audio had a technical problem that may make some speech hard to hear."
     if flag.startswith("crosscheck_disagree:"):
-        return f"Local check disagreed with the AI on {flag.split(':', 1)[1].replace('_', ' ')}; treated conservatively."
+        return (f"The local video check and the AI disagreed about the {flag.split(':', 1)[1].replace('_', ' ')}, so it was "
+                "not used to cap the grade and confidence was lowered.")
     if flag.startswith("unsupported_claim:"):
-        return f"An AI claim about {flag.split(':', 1)[1].replace('_', ' ')} could not be verified and was ignored."
-    return flag
+        return (f"An observation about {flag.split(':', 1)[1].replace('_', ' ')} could not be matched to the recording "
+                "or transcript, so it was ignored.")
+    return "An internal check raised a note on this review."
 
 
 def _headline(a: Assessment) -> str:

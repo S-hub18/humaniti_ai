@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from cqa.config import call_spacing_s, load_dotenv, model_id
 from cqa.evidence import parse_ts
-from cqa.explain import build_explanation
+from cqa.explain import ABSENCE, build_explanation
 from cqa.media import probe
 from cqa.modules import ModuleResult
 from cqa.observer import MockObserver
@@ -293,6 +293,10 @@ def run_assessment(
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _sentence(text: str) -> str:
+    return text[:1].upper() + text[1:] if text else text
+
+
 def _report(run, duration: float, mode: str, model: str, results: dict, wall: float) -> dict:
     a = run.assessment
     ex = build_explanation(a)
@@ -303,6 +307,8 @@ def _report(run, duration: float, mode: str, model: str, results: dict, wall: fl
         items.append({
             "id": d.id, "title": d.title, "weight": d.weight, "status": ic.status.value,
             "scored": STATUS_VALUE[ic.status] is not None, "agreement": round(ic.agreement, 2),
+            "votes_total": len(ic.votes), "votes_agree": sum(1 for v in ic.votes if v == ic.status),
+            "absence": _sentence(ABSENCE.get(d.id, "").removeprefix("Missing: ")) if ic.status == Status.NOT_MET else "",
             "description": d.description, "evidence": evid,
         })
         for e in ic.evidence:

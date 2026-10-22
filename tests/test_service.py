@@ -292,3 +292,39 @@ def test_report_items_carry_absence_and_vote_counts(clip):
     assert hw["votes_total"] == 3 and hw["votes_agree"] == 3
     assert not any("mock evidence for" in e["observation"] for it in rep["items"] for e in it["evidence"])
     assert all(":" not in t.split(" ")[0] for t in rep["flag_text"])  # no raw codes like audio_defect:low_level
+
+
+# ---- lost uploads vs bad files vs good files ----
+def test_check_upload_bytes_lost_or_truncated():
+    from cqa.service import LOST_UPLOAD, check_upload_bytes
+
+    with pytest.raises(InputError, match="upload was lost"):
+        check_upload_bytes(b"", 1234)
+    with pytest.raises(InputError, match="upload was lost"):
+        check_upload_bytes(b"x" * 10, 1234)  # truncated buffer vs browser-reported size
+    check_upload_bytes(b"x" * 10, 10)
+    check_upload_bytes(b"x" * 10, None)
+    assert "Remove the file and upload it again" in LOST_UPLOAD
+
+
+def test_empty_file_reports_lost_upload_not_bad_video(tmp_path):
+    empty = tmp_path / "upload.mp4"
+    empty.write_bytes(b"")
+    with pytest.raises(InputError, match="upload was lost"):
+        run_assessment(empty, mode="mock", modules={})
+
+
+def test_bad_file_reports_not_a_video_and_logs_ffprobe(tmp_path, caplog):
+    import logging
+
+    bad = tmp_path / "upload.mp4"
+    bad.write_text("definitely not a video")
+    with caplog.at_level(logging.ERROR, logger="cqa.service"):
+        with pytest.raises(InputError, match="as a video"):
+            run_assessment(bad, mode="mock", modules={})
+    assert any("ffprobe failed" in r.message and "Invalid data" in r.message for r in caplog.records)
+
+
+def test_good_file_passes_probe(clip):
+    rep = run_assessment(clip, mode="mock", modules={})
+    assert rep["label"]

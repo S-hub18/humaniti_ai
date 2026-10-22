@@ -38,5 +38,5 @@ def probe(path: Path | str) -> MediaRef:
         text=True,
         check=True,
     )
-    duration = float(json.loads(res.stdout)["format"]["duration"])
+    duration = float(json.loads(res.stdout)["format"]["duration"])  # KeyError/ValueError if no duration
     return MediaRef(path=path, sha256=fast_hash(path), duration=duration)

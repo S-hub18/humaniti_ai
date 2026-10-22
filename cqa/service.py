@@ -7,6 +7,7 @@ frames) lives in a temp dir that is deleted in `finally`. Transcript text is nev
 from __future__ import annotations
 
 import ipaddress
+import logging
 from contextlib import contextmanager
 import os
 import shutil
@@ -28,6 +29,7 @@ from cqa.rubric import ITEMS, STATUS_VALUE, Status
 from cqa.schema import TranscriptTurn
 from cqa.transcript import parse_vtt
 
+log = logging.getLogger("cqa.service")
 Progress = Callable[[str, float], None]
 DOWNLOAD_DEADLINE_S = 20 * 60
 MAX_BYTES = 600 * 1024 * 1024  # matches .streamlit maxUploadSize
@@ -47,6 +49,39 @@ MOCK_ORACLE = {
 
 class InputError(ValueError):
     """Bad user input (unsupported link, too large, unreadable file)."""
+
+
+LOST_UPLOAD = "Your upload was lost (the app restarted). Remove the file and upload it again."
+NOT_A_VIDEO = "Could not read this file as a video. Upload an mp4, mov, mkv or webm recording."
+_FFPROBE_INVALID = ("Invalid data found when processing input", "moov atom not found", "could not find codec",
+                    "End of file")
+
+
+def check_upload_bytes(data: bytes | memoryview, expected_size: int | None) -> None:
+    """An empty or truncated upload buffer (e.g. the server restarted while the browser still showed the file)."""
+    n = len(data)
+    if n == 0 or (expected_size is not None and expected_size > 0 and n != expected_size):
+        log.warning("upload buffer has %d bytes, expected %s", n, expected_size)
+        raise InputError(LOST_UPLOAD)
+
+
+def _probe_or_explain(path: Path):
+    """probe() with honest errors: lost upload vs not a video vs other ffprobe failures (always logged)."""
+    import subprocess as _sp
+
+    if not Path(path).exists() or Path(path).stat().st_size == 0:
+        raise InputError(LOST_UPLOAD)
+    try:
+        return probe(path)
+    except _sp.CalledProcessError as exc:
+        err = (exc.stderr or "").strip()
+        log.error("ffprobe failed (exit %s) on upload: %s", exc.returncode, err[-500:])
+        if any(sig.lower() in err.lower() for sig in _FFPROBE_INVALID):
+            raise InputError(NOT_A_VIDEO) from exc
+        raise InputError("The recording could not be read (ffprobe failed). Try uploading it again.") from exc
+    except (ValueError, KeyError) as exc:  # ffprobe ran but returned no duration
+        log.error("ffprobe returned no usable duration: %r", exc)
+        raise InputError(NOT_A_VIDEO) from exc
 
 
 def _gdown(url: str, out: Path) -> Path:
@@ -241,10 +276,7 @@ def run_assessment(
     tmp = Path(tempfile.mkdtemp(prefix="cqa_run_"))
     try:
         say("Reading the recording", 0.05)
-        try:
-            media = probe(video_path)
-        except Exception as exc:  # ffprobe failure = not a playable video
-            raise InputError("Could not read this file as a video. Upload an mp4, mov, mkv or webm recording.") from exc
+        media = _probe_or_explain(Path(video_path))
         transcript: list[TranscriptTurn] | None = None
         if vtt_path is not None:
             transcript = parse_vtt(Path(vtt_path).read_text(encoding="utf-8", errors="replace"))

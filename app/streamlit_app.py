@@ -21,7 +21,9 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cqa.config import MODELS, free_tier, load_dotenv  # noqa: E402
-from cqa.service import GATE, InputError, fetch_input, run_assessment, run_transcript_review  # noqa: E402
+from cqa.service import (  # noqa: E402
+    GATE, InputError, check_upload_bytes, fetch_input, run_assessment, run_transcript_review,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from theme import CSS, GRADE_PIECE, TOKENS, page_link, theme_css  # noqa: E402,F401
@@ -268,12 +270,16 @@ def review_page() -> None:
                 tmpd = Path(tmp)
                 if source == "Transcript only":
                     tx = tmpd / "transcript.vtt"
-                    tx.write_bytes(vtt_only.getbuffer())
+                    data = vtt_only.getbuffer()
+                    check_upload_bytes(data, getattr(vtt_only, "size", None))
+                    tx.write_bytes(data)
                     st.session_state["report"] = run_transcript_review(tx, mode=engine, tier=tier, progress=progress)
                     raise _Done
                 if upload is not None:
+                    data = upload.getbuffer()
+                    check_upload_bytes(data, getattr(upload, "size", None))
                     video = tmpd / f"upload{Path(upload.name).suffix.lower()}"
-                    video.write_bytes(upload.getbuffer())
+                    video.write_bytes(data)
                 else:
                     bar.progress(0.02, text="Downloading the recording")
                     video = fetch_input(link, tmpd)

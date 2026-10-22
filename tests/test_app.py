@@ -167,3 +167,12 @@ def test_each_input_choice_shows_exactly_its_own_uploaders():
     at.radio(key="source").set_value("Transcript only").run()
     assert labels() == ["Zoom transcript (.vtt)"]  # exactly one uploader on the transcript choice
     assert not at.exception
+
+
+def test_app_shows_lost_upload_message_for_empty_buffer(monkeypatch):
+    import cqa.service as svc
+
+    with pytest.raises(svc.InputError, match="upload was lost"):
+        svc.check_upload_bytes(memoryview(b""), 5_000_000)
+    src = Path(APP).read_text()
+    assert "check_upload_bytes(data, getattr(upload, \"size\", None))" in src

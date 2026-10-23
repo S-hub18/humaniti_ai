@@ -20,7 +20,7 @@ evidence for each part of the teaching rubric.
 |---|---|---|
 | ![Landing page](docs/img/landing.png) | ![Results page with mock data](docs/img/results-mock.png) | ![How it works page](docs/img/how-it-works.png) |
 
-Screenshots use the built-in mock observer and a generated test video. No real class appears in them.
+Screenshots were rendered with the test-only observer on a generated test video. No real class appears in them.
 
 ## How it works
 
@@ -89,8 +89,8 @@ uv sync
 uv run streamlit run app/streamlit_app.py
 ```
 
-The app opens in **Mock mode**, which runs the whole pipeline with a built-in demo observer and no API calls. Use
-"Run a sample review" to see a report.
+Reviews always run on Gemini, so set `GEMINI_API_KEY` first. Without a key the app shows a setup message and won't
+run. The test-only mock observer is not in the UI; it's used by the tests and by `eval.run_eval --observer mock`.
 
 ### Environment variables
 
@@ -98,7 +98,7 @@ Put these in the environment or in a local `.env` file. `.env` and `.env.*` are 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GEMINI_API_KEY` | (unset) | Required for Gemini mode. |
+| `GEMINI_API_KEY` | (unset) | Required. Every review runs on Gemini. |
 | `CQA_GEMINI_MODEL` | `gemini-3.8-flash` | Optional override. **Flash / Flash-Lite only**; Pro models are rejected in code. |
 | `FREE_TIER` | `1` | Spaces Gemini calls about 65 s apart and waits out rate limits. Set it to `0` for a paid key. |
 | `GEMINI_TPM` | `200000` free / `4000000` paid | Input-token-per-minute budget. Before each call the app estimates its tokens and waits until the call fits (the free-tier limit is about 250k). |

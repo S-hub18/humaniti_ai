@@ -9,14 +9,6 @@ st_testing = pytest.importorskip("streamlit.testing.v1")
 APP = str(Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py")
 
 
-def test_app_renders_in_mock_mode(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    at = st_testing.AppTest.from_file(APP, default_timeout=30)
-    at.run()
-    assert not at.exception
-    assert at.radio(key="cfg_mode").value.startswith("Mock")
-    assert at.button[0].disabled  # nothing uploaded yet
-
 
 def test_render_report_from_mock_service(tmp_path):
     from cqa.service import run_assessment
@@ -31,7 +23,7 @@ def test_render_report_from_mock_service(tmp_path):
     at.run()
     assert not at.exception
     page = " ".join(m.value for m in at.markdown)
-    assert "Mock result" in page and rep["label"] in page and "cq-rank" in page
+    assert "Test result" in page and rep["label"] in page and "cq-rank" in page
     assert all(html.escape(it["title"]) in page for it in rep["items"])
 
 
@@ -48,16 +40,6 @@ def test_model_text_is_html_escaped():
     out = mod.item_html(it)
     assert "<script>" not in out and "<img" not in out and "&lt;script&gt;" in out
 
-
-def test_sample_review_button_renders_a_mock_report(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    at = st_testing.AppTest.from_file(APP, default_timeout=180)
-    at.run()
-    sample = next(b for b in at.button if b.label == "Run a sample review")
-    sample.click().run()
-    assert not at.exception
-    page = " ".join(m.value for m in at.markdown)
-    assert "Mock result" in page and "cq-rank" in page
 
 
 def test_esc_collapses_blank_lines():
@@ -189,3 +171,53 @@ def test_missing_ffmpeg_shows_clear_error(monkeypatch):
 
 def test_packages_txt_installs_ffmpeg():
     assert (Path(APP).parents[1] / "packages.txt").read_text().split() == ["ffmpeg"]
+
+
+
+
+def test_no_mock_engine_in_ui_and_setup_error_without_key(monkeypatch):
+    import cqa.config
+
+    monkeypatch.setattr(cqa.config, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    assert not at.exception
+    labels = [b.label for b in at.button]
+    assert "Run a sample review" not in labels
+    assert not any(r.label == "Who reviews the class" for r in at.radio)
+    assert next(b for b in at.button if b.label == "Review this class").disabled
+    assert any("GEMINI_API_KEY" in e.value for e in at.error)
+    page = " ".join(m.value for m in at.markdown if not m.value.lstrip().startswith("<style")).lower()
+    assert "mock" not in page
+
+
+def test_review_button_always_runs_gemini(monkeypatch, tmp_path):
+    import subprocess
+
+    import cqa.config
+    import cqa.service
+    from cqa.service import run_assessment as real_run
+
+    clip = tmp_path / "c.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=8:size=320x240:rate=5",
+                    "-f", "lavfi", "-i", "sine=duration=8", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    rep = real_run(clip, mode="mock", modules={})  # report produced by the test-only observer (fake client stand-in)
+    seen = {}
+
+    def fake_run(video, **kw):
+        seen.update(kw)
+        return {**rep, "mode": "gemini"}
+
+    monkeypatch.setattr(cqa.config, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+    monkeypatch.setattr(cqa.service, "fetch_input", lambda src, dest, **k: clip)
+    monkeypatch.setattr(cqa.service, "run_assessment", fake_run)
+    at = st_testing.AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    at.radio(key="source").set_value("Paste a link").run()
+    at.text_input(key="link_url").set_value("https://example.com/class.mp4").run()
+    next(b for b in at.button if b.label == "Review this class").click().run()
+    assert not at.exception
+    assert seen["mode"] == "gemini"
+    assert at.session_state["report"]["label"] == rep["label"]

@@ -1,7 +1,7 @@
 """Class review app (Streamlit). Upload a class recording, paste a link, or upload a transcript; get a graded,
 evidence-backed review.
 
-Runs end to end in Mock mode with no API calls. Uploaded files live in a temporary directory that is deleted as
+Reviews always run on Gemini (GEMINI_API_KEY required). Uploaded files live in a temporary directory that is deleted as
 soon as the review is built.
 """
 
@@ -164,8 +164,8 @@ def render_report(rep: dict) -> None:
     if rep.get("review_type") == "transcript":
         st.markdown('<div class="cq-badge">Transcript-only review</div>', unsafe_allow_html=True)
     if rep["mode"] == "mock":
-        st.markdown('<div class="cq-mock"><b>Mock result.</b> This review used the built-in demo observer, not an AI '
-                    'model. Switch the review engine to Gemini for a real assessment.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cq-mock"><b>Test result.</b> This report came from the test-only observer, not from '
+                    'Gemini.</div>', unsafe_allow_html=True)
     st.markdown(hero_html(rep), unsafe_allow_html=True)
     flags = flags_html(rep)
     if flags:
@@ -203,31 +203,26 @@ def sidebar() -> dict:
     has_key = bool(os.environ.get("GEMINI_API_KEY"))
     with st.sidebar:
         st.markdown("### Review engine")
-        mode = st.radio("Who reviews the class", ["Mock (no API cost)", "Gemini"], index=0, key="cfg_mode",
-                        help="Mock runs the whole app with a built-in demo observer.")
-        st.markdown('<p class="cq-help"><b>Mock</b> shows how the review looks, using made-up observations. It is free '
-                    'and instant, but the grade is not real.<br><b>Gemini</b> watches and listens to the actual class and '
-                    'gives a real review.</p>', unsafe_allow_html=True)
-        if mode == "Gemini" and not has_key:
-            st.warning("Gemini needs GEMINI_API_KEY on the server. Using Mock instead.")
-            mode = "Mock (no API cost)"
-        tier = st.selectbox("Gemini model", list(MODELS), key="cfg_tier", format_func=lambda t: f"{t} ({MODELS[t]})",
-                            disabled=not mode.startswith("Gemini"))
-        if mode == "Gemini" and free_tier():
+        mode = "Gemini"
+        if not has_key:
+            st.error("GEMINI_API_KEY is not configured. Add it to the app's secrets (Streamlit Cloud) or to a .env "
+                     "file, then restart the app.")
+        tier = st.selectbox("Gemini model", list(MODELS), key="cfg_tier", format_func=lambda t: f"{t} ({MODELS[t]})")
+        if free_tier():
             st.markdown('<p class="cq-help">This key is on the <b>free tier</b>: the app paces its calls and waits '
                         'out rate limits, so a one-hour class takes about 10 to 15 minutes.</p>', unsafe_allow_html=True)
         st.markdown("### Extra checks")
-        b1 = st.checkbox("Transcript judge (Gemini only)", value=True, key="cfg_b1", disabled=not mode.startswith("Gemini"),
+        b1 = st.checkbox("Transcript judge", value=True, key="cfg_b1",
                          help="Scores the transcript separately (your .vtt, or Gemini transcribes the audio). "
                               "Children's names are replaced with Kid1, Kid2… before scoring.")
         b2 = st.checkbox("Audio delivery check (runs locally)", value=True, key="cfg_b2")
         xc = st.checkbox("Camera and background check (runs locally)", value=True, key="cfg_xc")
         st.markdown("### Privacy")
         st.markdown('<p class="cq-help">Files are processed in a temporary folder and deleted as soon as the review is '
-                    'built. Nothing is stored. In Gemini mode the recording goes to Google Gemini and is deleted there '
-                    'after the review.</p>', unsafe_allow_html=True)
+                    'built. Nothing is stored. The recording goes to Google Gemini for the review and is deleted there '
+                    'afterwards.</p>', unsafe_allow_html=True)
 
-    return {"mode": mode, "tier": tier, "b1": b1, "b2": b2, "xc": xc}
+    return {"mode": mode, "tier": tier, "b1": b1, "b2": b2, "xc": xc, "has_key": has_key}
 
 
 def review_page() -> None:
@@ -267,24 +262,15 @@ def review_page() -> None:
                                     help="No video needed. The camera and background item can't be judged from text.")
         st.caption("Review from the transcript alone. Children's names are replaced with Kid1, Kid2… before scoring.")
 
-    c1, c2 = st.columns([1, 2])
-    go = c1.button("Review this class", type="primary", disabled=not (upload or link or vtt_only))
-    sample = c2.button("Run a sample review", type="secondary")
-    c2.caption("Uses a generated test video in Mock mode. No real class, no API calls.")
-    if sample:
-        st.session_state.pop("report", None)
-        with st.spinner("Building a synthetic test video and reviewing it"):
-            with tempfile.TemporaryDirectory(prefix="cqa_sample_") as tmp:
-                clip = Path(tmp) / "sample.mp4"
-                subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
-                                "testsrc=duration=60:size=640x360:rate=5", "-f", "lavfi", "-i",
-                                "sine=frequency=180:duration=60", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
-                st.session_state["report"] = run_assessment(clip, mode="mock", modules={"b2": b2, "xc": xc})
+    has_key = cfg.get("has_key", True)
+    if not has_key:
+        st.error("Reviews need a Gemini API key. Set GEMINI_API_KEY in the app's secrets or .env, then restart.")
+    go = st.button("Review this class", type="primary", disabled=not has_key or not (upload or link or vtt_only))
 
     if go:
         st.session_state.pop("report", None)  # never show a previous class's report under a new error
         bar = st.progress(0.0, text="Starting")
-        engine = "gemini" if mode == "Gemini" else "mock"
+        engine = "gemini"
         progress = lambda msg, f: bar.progress(min(f, 1.0), text=msg)  # noqa: E731
         try:
             with GATE.slot(on_wait=lambda s: bar.progress(0.0, text=f"Another review is running. You're next (waiting {s:.0f}s).")) \
@@ -327,11 +313,11 @@ def review_page() -> None:
             log.exception("review failed")
             if type(exc).__name__ == "ServerError" or getattr(exc, "code", None) in (500, 502, 503, 504):
                 st.error("Gemini is overloaded right now and did not recover after several retries. "
-                         "Try again in a minute, or use Mock mode.")
+                         "Try again in a minute.")
             elif getattr(exc, "code", None) == 429:
                 st.error("Gemini's rate limit was reached and did not clear after several retries. Try again in a minute.")
             else:
-                st.error(f"The review stopped unexpectedly ({type(exc).__name__}). Try again, or try Mock mode.")
+                st.error(f"The review stopped unexpectedly ({type(exc).__name__}). Try again in a minute.")
 
     rep = st.session_state.get("report")
     if rep:
@@ -340,8 +326,7 @@ def review_page() -> None:
         st.markdown('<div class="cq-empty"><b>Choose one way to add the class, then select Review this class.</b><ul>'
                     '<li>Upload a recording: the full review, video and audio.</li>'
                     '<li>Paste a link: a Google Drive share link or a direct link to the video.</li>'
-                    '<li>Transcript only: just the Zoom .vtt. Camera and background are not scored.</li></ul>'
-                    '<p class="cq-help">Not sure yet? Run a sample review to see what a report looks like.</p></div>',
+                    '<li>Transcript only: just the Zoom .vtt. Camera and background are not scored.</li></ul></div>',
                     unsafe_allow_html=True)
 
 

@@ -18,7 +18,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from cqa.config import model_id, prices_for
-from cqa.gemini_retry import countdown_sleep, retry_call, retry_delay
+from cqa.gemini_retry import countdown_sleep, estimate_video_tokens, retry_call, retry_delay
 from cqa.evidence import WINDOW_TOLERANCE_S, fmt_ts, parse_ts
 from cqa.media import MediaRef
 from cqa.observer import CallSpec, CallStats
@@ -53,7 +53,13 @@ class GeminiObserver:
         on_retry=None,
         on_wait=None,
         on_call=None,
+        bucket=None,
+        cancel_check=None,
     ) -> None:
+        from cqa.gemini_retry import BUCKET
+
+        self.bucket = bucket if bucket is not None else BUCKET
+        self.cancel_check = cancel_check  # () -> None; raises ReviewCancelled when the user's session is gone
         self.on_retry = on_retry
         self.on_wait = on_wait  # (seconds_remaining, attempt, max_retries, kind) -> live countdown in the UI
         self.on_call = on_call  # (call name) -> "which step is running" in the UI
@@ -161,6 +167,13 @@ class GeminiObserver:
                     countdown_sleep(wait, lambda rem: self.on_wait(rem, 0, 0, "spacing"), self._sleep)
                 else:
                     self._sleep(wait)
+        if self.cancel_check is not None:
+            self.cancel_check()
+        tokens = estimate_video_tokens(spec.end - spec.start, spec.media_resolution)
+        on_pace = (lambda rem: self.on_wait(rem, 0, 0, "pacing")) if self.on_wait is not None else None
+        self.bucket.acquire(tokens, on_pace)
+        if self.cancel_check is not None:
+            self.cancel_check()
         resp = self._retry(lambda: self._request(f, spec, duration), f"{spec.name} call")
         self._last_call = time.monotonic()
         return resp

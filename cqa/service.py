@@ -201,6 +201,8 @@ def _attach_progress(observer, duration: float, say: Progress) -> None:
         def on_wait(rem: int, attempt: int, max_retries: int, kind: str) -> None:
             if kind == "spacing":
                 say(f"Free-tier pacing: next Gemini call in {rem}s", 0.6)
+            elif kind == "pacing":
+                say(f"Pacing to stay under the free tier limit, starting in {rem}s", 0.6)
             elif kind == "rate_limit":
                 say(f"Rate limit hit, waiting {rem}s before retrying (attempt {attempt}/{max_retries})", 0.6)
             else:
@@ -268,6 +270,7 @@ def run_assessment(
     modules: dict[str, bool] | None = None,
     progress: Progress | None = None,
     b2_vote: bool = False,
+    cancel_check: Callable[[], None] | None = None,
 ) -> dict:
     """Run the full assessment and return a JSON-serialisable report."""
     modules = {"b2": True, "xc": True} if modules is None else modules
@@ -311,6 +314,8 @@ def run_assessment(
 
         observer, model = _observer(mode, tier, on_retry=busy)
         _attach_progress(observer, media.duration, say)
+        if hasattr(observer, "cancel_check"):
+            observer.cancel_check = cancel_check
         if modules.get("b1"):
             say("Scoring the transcript (B1)", 0.45)
             results["b1"] = _run_b1(media, vtt_path, mode, observer)

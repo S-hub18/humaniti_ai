@@ -31,6 +31,23 @@ from theme import CSS, GRADE_PIECE, TOKENS, page_link, theme_css  # noqa: E402,F
 log = logging.getLogger("cqa.app")
 
 
+def _session_cancel_check() -> None:
+    """Raise ReviewCancelled if this browser session was closed or rerun, so an orphaned run stops before its next
+    Gemini call (its upload is deleted by the observer session's finally block)."""
+    from cqa.gemini_retry import ReviewCancelled
+
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        ctx = get_script_run_ctx()
+        state = getattr(getattr(ctx, "script_requests", None), "_state", None)
+        name = getattr(state, "name", "")
+    except Exception:
+        return
+    if name in ("STOP_REQUESTED", "RERUN_REQUESTED"):
+        raise ReviewCancelled(f"session {name.lower()}")
+
+
 class _Done(Exception):
     """Internal: transcript-only path finished inside the shared temp/lock context."""
 
@@ -294,7 +311,8 @@ def review_page() -> None:
                     vtt_path.write_bytes(vtt.getbuffer())
                 st.session_state["report"] = run_assessment(
                     video, vtt_path=vtt_path, mode=engine, tier=tier,
-                    modules={"b1": b1 and mode == "Gemini", "b2": b2, "xc": xc}, progress=progress)
+                    modules={"b1": b1 and mode == "Gemini", "b2": b2, "xc": xc}, progress=progress,
+                    cancel_check=_session_cancel_check)
             bar.empty()
         except _Done:
             bar.empty()

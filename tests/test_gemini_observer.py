@@ -323,3 +323,48 @@ def test_spacing_wait_counts_down_and_on_call_hook():
         obs.observe(MEDIA, spec, 1)
     assert calls == ["main", "main"]
     assert waits and waits[0][1] == "spacing" and waits[0][0] >= 60
+
+
+def test_observer_paces_with_bucket_and_shows_message():
+    from cqa.gemini_retry import TokenBucket
+
+    class Clk:
+        t = 0.0
+
+        def __call__(self):
+            return self.t
+
+        def sleep(self, s):
+            self.t += s
+
+    clk = Clk()
+    obs, _ = make([payload("main")])
+    obs.bucket = TokenBucket(tpm=200_000, clock=clk, sleep=clk.sleep)
+    obs._sleep = lambda s: None
+    waits = []
+    obs.on_wait = lambda rem, a, m, kind: waits.append(kind)
+    spec = CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low")  # ~300k tokens
+    with obs.session(MEDIA):
+        obs.observe(MEDIA, spec, 0)
+        obs.observe(MEDIA, spec, 1)
+    assert "pacing" in waits and clk.t >= 60.0
+
+
+def test_cancel_check_stops_before_call_and_deletes_upload():
+    from cqa.gemini_retry import ReviewCancelled
+
+    obs, client = make([payload("main")])
+    calls = {"n": 0}
+
+    def cancel():
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise ReviewCancelled("session gone")
+
+    obs.cancel_check = cancel
+    spec = CallSpec(name="main", start=0.0, end=3000.0, media_resolution="low")
+    with pytest.raises(ReviewCancelled):
+        with obs.session(MEDIA):
+            obs.observe(MEDIA, spec, 0)
+            obs.observe(MEDIA, spec, 1)
+    assert client.files.deleted == ["files/1"]

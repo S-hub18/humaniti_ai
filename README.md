@@ -101,6 +101,7 @@ Put these in the environment or in a local `.env` file. `.env` and `.env.*` are 
 | `GEMINI_API_KEY` | (unset) | Required for Gemini mode. |
 | `CQA_GEMINI_MODEL` | `gemini-3.8-flash` | Optional override. **Flash / Flash-Lite only**; Pro models are rejected in code. |
 | `FREE_TIER` | `1` | Spaces Gemini calls about 65 s apart and waits out rate limits. Set it to `0` for a paid key. |
+| `GEMINI_TPM` | `200000` free / `4000000` paid | Input-token-per-minute budget. Before each call the app estimates its tokens and waits until the call fits (the free-tier limit is about 250k). |
 
 ## Deploy (Docker / Hugging Face Spaces)
 

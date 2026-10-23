@@ -145,7 +145,11 @@ _TRANSCRIBE_PROMPT = (
 )
 
 
-def _call(client, model: str, contents, config, sleep, on_retry=None):
+def _call(client, model: str, contents, config, sleep, on_retry=None, tokens: int | None = None):
+    from cqa.gemini_retry import BUCKET, estimate_text_tokens
+
+    est = tokens if tokens is not None else sum(estimate_text_tokens(c) for c in contents if isinstance(c, str))
+    BUCKET.acquire(est, None)
     return retry_call(lambda: client.models.generate_content(model=model, contents=contents, config=config),
                       "B1 call", sleep=sleep, on_retry=on_retry)
 
@@ -195,7 +199,8 @@ def transcribe_audio(media_path, client, model: str, duration: float, chunk_s: f
                 part = types.Part(file_data=types.FileData(file_uri=remote.uri, mime_type=remote.mime_type))
                 turns = []
                 for _attempt in range(2):
-                    resp = _call(client, model, [part, _TRANSCRIBE_PROMPT], _config(_TRANSCRIPT_SCHEMA), sleep)
+                    resp = _call(client, model, [part, _TRANSCRIBE_PROMPT], _config(_TRANSCRIPT_SCHEMA), sleep,
+                                 tokens=int((e - s) * 32) + 200)
                     last = time.monotonic()
                     try:
                         data = json.loads(resp.text)

@@ -16,9 +16,9 @@ evidence for each part of the teaching rubric.
 
 **Live app:** _link to be added after deployment_ · **Source:** https://github.com/S-hub18/humaniti_ai
 
-| Landing | Results (mock data) | How it works |
+| Landing | Results (test data) | How it works |
 |---|---|---|
-| ![Landing page](docs/img/landing.png) | ![Results page with mock data](docs/img/results-mock.png) | ![How it works page](docs/img/how-it-works.png) |
+| ![Landing page](docs/img/landing.png) | ![Results page with test data](docs/img/results-mock.png) | ![How it works page](docs/img/how-it-works.png) |
 
 Screenshots were rendered with the test-only observer on a generated test video. No real class appears in them.
 
